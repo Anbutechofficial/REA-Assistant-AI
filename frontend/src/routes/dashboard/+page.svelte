@@ -421,7 +421,7 @@
         </button>
         
         <!-- Settings -->
-        <button class="icon-btn" title="Settings" onclick={() => alert('Settings Modal: Backend URL: http://localhost:8000')}>
+        <button class="icon-btn" title="Settings" onclick={() => alert(`System Settings:\nConnected Backend: ${API_BASE_URL}\nStatus: ${apiConnected ? 'Connected' : 'Disconnected'}`)}>
           <Settings size={20} />
         </button>
 
