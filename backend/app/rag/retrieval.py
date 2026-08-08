@@ -5,7 +5,6 @@ import numpy as np
 import certifi
 import pandas as pd
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
 from pymongo import MongoClient
 
 from app.core.config import Setting
@@ -22,12 +21,16 @@ _st_model = None
 def get_sentence_model():
     global _st_model
     if _st_model is None:
-        _st_model = SentenceTransformer("all-MiniLM-L6-v2")
-    return _st_model
+        try:
+            from sentence_transformers import SentenceTransformer
+            _st_model = SentenceTransformer("all-MiniLM-L6-v2")
+        except Exception:
+            _st_model = False
+    return _st_model if _st_model else None
 
 
 def get_query_embedding(query: str) -> list[float]:
-    """Generate embedding for query using Gemini API or SentenceTransformers."""
+    """Generate embedding for query using Gemini API or SentenceTransformers fallback."""
     gemini_key = Setting.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
 
     if gemini_key:
@@ -49,18 +52,19 @@ def get_query_embedding(query: str) -> list[float]:
                 if ("429" in str(e) or "RESOURCE_EXHAUSTED" in str(e)) and attempt < 1:
                     time.sleep(2)
                 else:
-                    print(f"Gemini query embedding unavailable ({e}). Falling back to SentenceTransformer.")
+                    print(f"Gemini query embedding note ({e}).")
                     break
 
-    try:
-        st_model = get_sentence_model()
-        emb = st_model.encode(query).tolist()
-        if len(emb) < 768:
-            emb = emb + [0.0] * (768 - len(emb))
-        return emb[:768]
-    except Exception as e:
-        print(f"SentenceTransformer embedding failed: {e}")
-        return []
+    st_model = get_sentence_model()
+    if st_model:
+        try:
+            emb = st_model.encode(query).tolist()
+            if len(emb) < 768:
+                emb = emb + [0.0] * (768 - len(emb))
+            return emb[:768]
+        except Exception as e:
+            print(f"SentenceTransformer embedding failed: {e}")
+    return []
 
 
 def load_local_properties():

@@ -1,10 +1,10 @@
 import os
 import json
 import pandas as pd
-from sentence_transformers import SentenceTransformer
 
 
 def generate_embeddings():
+    from sentence_transformers import SentenceTransformer
     base_dir = os.path.dirname(os.path.abspath(__file__))
     uploads_dir = os.path.abspath(os.path.join(base_dir, "..", "uploads"))
     csv_path = os.path.join(uploads_dir, "Real_Estate_Assistant.csv")

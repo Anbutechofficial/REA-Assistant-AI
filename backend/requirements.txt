@@ -12,7 +12,6 @@ certifi
 # AI / ML & Data Processing
 google-genai
 litellm
-sentence-transformers
 numpy
 pandas
 
