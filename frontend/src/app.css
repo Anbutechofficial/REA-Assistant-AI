@@ -64,11 +64,18 @@
   --card-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
 }
 
-/* Resets & Base Styles */
+/* Resets & Mobile Base Styles */
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  width: 100%;
+  min-height: 100%;
+  min-height: 100dvh;
 }
 
 body {
@@ -79,6 +86,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
   transition: background-color var(--transition-normal), color var(--transition-normal);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -102,7 +113,11 @@ h1, h2, h3, h4, h5, h6 {
   background-color: var(--bg-card-hover);
 }
 
-/* Buttons */
+/* Buttons & Touch Optimization */
+button, a, input, select, textarea {
+  touch-action: manipulation;
+}
+
 .btn-primary {
   display: inline-flex;
   align-items: center;
@@ -113,6 +128,7 @@ h1, h2, h3, h4, h5, h6 {
   border: none;
   border-radius: 8px;
   padding: 10px 20px;
+  min-height: 44px;
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 0.95rem;
@@ -193,3 +209,10 @@ h1, h2, h3, h4, h5, h6 {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
+@media (max-width: 640px) {
+  .container {
+    padding: 0 16px;
+  }
+}
+

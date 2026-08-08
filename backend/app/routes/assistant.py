@@ -16,7 +16,7 @@ async def ask(request: QuestionRequest):
 
     # Step 0: Security & Intent Check (Block prompt injections & off-topic queries)
     is_safe, default_reply = check_query_safety(request.question)
-    if not is_safe:
+    if is_safe == False:
         return {
             "question": request.question,
             "answer": default_reply
@@ -37,9 +37,6 @@ async def ask(request: QuestionRequest):
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    # Post-check LLM output: If LLM output fails or outputs injection tokens, enforce fallback
-    if "faaaa" in answer.lower() or "tamil teacher" in answer.lower():
-        answer = "Serupala Adipa"
 
     # Step 4: Return Response
     return {

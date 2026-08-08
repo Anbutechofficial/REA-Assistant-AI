@@ -25,13 +25,15 @@
     Check,
     ArrowUpRight,
     Search,
-    Building2
+    Building2,
+    Menu
   } from '@lucide/svelte';
 
   // --- STATE VARIABLES ---
   
   // Navigation & Theme
   let sidebarCollapsed = $state(false);
+  let mobileMenuOpen = $state(false);
   let activeSidebarTab = $state('Dashboard'); // 'Dashboard', 'Query History', 'Audio Transcripts', 'Data Sources', 'Help Center'
   let isLightTheme = $state(false);
 
@@ -338,43 +340,49 @@
 
 <div class="dashboard-container">
   
+  {#if mobileMenuOpen}
+    <!-- Mobile Navigation Backdrop -->
+    <button type="button" aria-label="Close mobile navigation backdrop" class="mobile-backdrop" onclick={() => mobileMenuOpen = false}></button>
+  {/if}
+
   <!-- SIDEBAR NAVIGATION -->
-  <aside class="sidebar" class:collapsed={sidebarCollapsed}>
+  <aside class="sidebar" class:collapsed={sidebarCollapsed} class:mobile-open={mobileMenuOpen}>
     <div class="sidebar-top">
       <div class="logo-box">
         <a href="/" class="home-logo-btn" title="Back to Landing Page">
           <Building2 size={22} class="home-svg-icon" />
         </a>
-        {#if !sidebarCollapsed}
+        {#if !sidebarCollapsed || mobileMenuOpen}
           <div class="logo-text">
             <h2>REA Assistant AI</h2>
             <span class="logo-ver">v0.1.0</span>
           </div>
         {/if}
+        <button class="mobile-close-btn icon-btn" onclick={() => mobileMenuOpen = false} title="Close menu">
+          <X size={20} />
+        </button>
       </div>
 
       <nav class="sidebar-menu">
         <button 
           class="menu-item" 
           class:active={activeSidebarTab === 'Dashboard'} 
-          onclick={() => activeSidebarTab = 'Dashboard'}
+          onclick={() => { activeSidebarTab = 'Dashboard'; mobileMenuOpen = false; }}
           title="Dashboard"
         >
           <LayoutDashboard size={20} />
-          {#if !sidebarCollapsed}<span>Dashboard</span>{/if}
+          <span>Dashboard</span>
         </button>
 
         <button 
           class="menu-item" 
           class:active={activeSidebarTab === 'Query History'} 
-          onclick={() => activeSidebarTab = 'Query History'}
+          onclick={() => { activeSidebarTab = 'Query History'; mobileMenuOpen = false; }}
           title="Query History"
         >
           <History size={20} />
-          {#if !sidebarCollapsed}
-            <span>Query History</span>
-            <span class="count-badge">{queryHistory.length}</span>
-          {/if}
+          <span>Query History</span>
+          <span class="count-badge">{queryHistory.length}</span>
         </button>
       </nav>
     </div>
@@ -396,6 +404,9 @@
     <!-- TOP HEADER -->
     <header class="workspace-header">
       <div class="header-left">
+        <button class="mobile-menu-btn icon-btn" onclick={() => mobileMenuOpen = !mobileMenuOpen} title="Toggle Navigation Menu">
+          <Menu size={22} />
+        </button>
         <h1>{activeSidebarTab}</h1>
       </div>
       
@@ -1744,83 +1755,128 @@
     color: var(--color-accent);
   }
 
+  .mobile-menu-btn {
+    display: none;
+  }
+
+  .mobile-close-btn {
+    display: none;
+  }
+
+  .mobile-backdrop {
+    display: none;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
   /* ==========================================================================
      RESPONSIVE & ADAPTIVE STYLES FOR ALL SCREEN DEVICES
      ========================================================================== */
 
   /* Mobile Devices (< 768px) */
   @media (max-width: 767px) {
-    .app-container {
+    .dashboard-container {
       flex-direction: column;
       height: 100vh;
       height: 100dvh;
-      overflow-y: auto;
+      width: 100vw;
+      overflow: hidden;
+    }
+
+    .mobile-menu-btn {
+      display: flex;
+    }
+
+    .mobile-backdrop {
+      display: block;
+      position: fixed;
+      inset: 0;
+      background: rgba(6, 9, 19, 0.7);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      z-index: 99;
+      border: none;
+      padding: 0;
+      cursor: pointer;
     }
 
     .sidebar {
-      width: 100% !important;
-      height: auto;
-      border-right: none;
-      border-bottom: 1px solid var(--border-light);
-      padding: 0.75rem 1rem;
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
-      flex-shrink: 0;
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 270px !important;
+      height: 100%;
+      z-index: 100;
+      transform: translateX(-100%);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 0 30px rgba(0, 0, 0, 0.6);
+      border-right: 1px solid var(--border-light);
+      padding: 1.25rem 1rem;
+      background-color: var(--bg-secondary);
     }
 
-    .sidebar.collapsed {
-      width: 100% !important;
-      padding: 0.75rem 1rem;
+    .sidebar.mobile-open {
+      transform: translateX(0);
     }
 
     .sidebar-top {
-      flex-direction: row;
-      align-items: center;
-      gap: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .logo-box {
       width: 100%;
       justify-content: space-between;
     }
 
     .logo-text {
-      display: none;
+      display: block;
+    }
+
+    .mobile-close-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: auto;
     }
 
     .sidebar-menu {
-      flex-direction: row;
-      overflow-x: auto;
-      gap: 0.25rem;
-      padding-bottom: 2px;
-      -webkit-overflow-scrolling: touch;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
     }
 
     .menu-item {
-      padding: 6px 10px;
-      font-size: 0.8rem;
-      white-space: nowrap;
-      border-radius: 6px;
+      padding: 12px 14px;
+      font-size: 0.95rem;
+      border-radius: 8px;
+      width: 100%;
     }
 
-    .menu-text {
-      font-size: 0.78rem;
-    }
-
-    .sidebar-bottom {
+    .collapse-btn {
       display: none;
     }
 
     .workspace {
-      height: auto;
-      min-height: calc(100vh - 60px);
+      width: 100%;
+      height: 100%;
+      flex-grow: 1;
+      overflow: hidden;
     }
 
     .workspace-header {
-      padding: 0 1rem;
-      height: 54px;
+      padding: 0 0.85rem;
+      height: 56px;
     }
 
     .workspace-header h1 {
-      font-size: 0.95rem;
+      font-size: 1rem;
     }
 
     .username {
@@ -1829,38 +1885,51 @@
 
     .workspace-content {
       padding: 0.75rem;
+      overflow-y: auto;
     }
 
     .chat-bubble-container {
-      max-width: 96%;
+      max-width: 94%;
+    }
+
+    .bubble-text {
+      padding: 0.85rem;
+      font-size: 0.88rem;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .svg-wrapper {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 4px;
     }
 
     .quick-ask-body {
-      padding: 0.75rem;
+      padding: 0.85rem;
     }
 
     .quick-ask-footer {
-      flex-direction: column;
-      align-items: stretch;
-      gap: 0.75rem;
-    }
-
-    .editor-tools {
-      justify-content: flex-start;
+      flex-direction: row;
+      align-items: center;
     }
 
     .action-buttons-group {
       width: 100%;
-      justify-content: space-between;
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .voice-btn {
+      flex-shrink: 0;
+      width: 44px;
+      height: 44px;
+      padding: 0;
     }
 
     .send-btn {
       flex-grow: 1;
-      min-width: unset;
-    }
-
-    .listings-grid {
-      grid-template-columns: 1fr;
+      min-height: 44px;
     }
   }
 
@@ -1886,8 +1955,9 @@
       max-width: 88%;
     }
 
-    .listings-grid {
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    .bubble-text {
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
   }
 </style>

@@ -289,51 +289,69 @@
     }
 
     .canvas-container {
-      opacity: 0.45;
+      opacity: 0.55;
     }
   }
 
   @media (max-width: 640px) {
     .overlay-container {
-      padding: 1rem;
+      padding: 0.85rem 1rem;
     }
 
     .landing-header {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0.75rem;
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
     }
 
     .logo {
-      font-size: 1.1rem;
+      font-size: 1.05rem;
+      gap: 6px;
+    }
+
+    .version-tag {
+      font-size: 0.65rem;
+      padding: 1px 4px;
     }
 
     .nav-links {
-      width: 100%;
-      justify-content: flex-start;
-      gap: 1rem;
+      gap: 0.75rem;
+    }
+
+    .nav-links a {
+      font-size: 0.85rem;
+      padding: 6px 12px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
     }
 
     .hero-section {
       margin-left: 0;
       margin-right: 0;
       width: 100%;
-      padding-top: 1rem;
-      padding-bottom: 1rem;
+      padding-top: 0.75rem;
+      padding-bottom: 0.75rem;
     }
 
     .hero-card {
       padding: 1.25rem;
       width: 100%;
-      gap: 1rem;
+      gap: 0.85rem;
+      border-radius: 14px;
     }
 
     .hero-card h1 {
-      font-size: 1.65rem;
+      font-size: 1.5rem;
+      line-height: 1.2;
     }
 
     .hero-desc {
       font-size: 0.85rem;
+      line-height: 1.5;
     }
 
     .cta-group {
@@ -343,12 +361,25 @@
     .btn-primary {
       width: 100%;
       justify-content: center;
+      padding: 12px 20px;
+      font-size: 0.95rem;
     }
 
     .room-info-pill {
-      top: 6.5rem;
-      width: 90%;
-      justify-content: center;
+      top: 4.25rem;
+      width: 92%;
+      max-width: 360px;
+      justify-content: flex-start;
+      padding: 8px 14px;
+      border-radius: 12px;
+    }
+
+    .room-title {
+      font-size: 0.78rem;
+    }
+
+    .room-sub {
+      font-size: 0.7rem;
     }
   }
 </style>
