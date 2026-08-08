@@ -587,7 +587,6 @@
                 ></textarea>
                 
                 <div class="quick-ask-footer">
-                   <div class="voice-lang-badge">🎙️ English & Tanglish Supported</div>
                    <div class="action-buttons-group">
                       <button 
                         class="btn-primary voice-btn" 
@@ -1019,7 +1018,7 @@
 
   .quick-ask-footer {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
   }
 
@@ -1078,19 +1077,6 @@
 
   .voice-btn.recording .mic-svg {
     stroke: #ef4444 !important;
-  }
-
-  .voice-lang-badge {
-    font-size: 0.78rem;
-    font-weight: 500;
-    color: var(--color-accent);
-    background: rgba(89, 255, 0, 0.08);
-    border: 1px solid rgba(89, 255, 0, 0.2);
-    padding: 0.3rem 0.75rem;
-    border-radius: 9999px;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
   }
 
   .tool-btn:hover {

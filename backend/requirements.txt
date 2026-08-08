@@ -1,6 +1,7 @@
 # Web Framework & Server
 fastapi
 uvicorn
+gunicorn
 python-multipart
 
 # Database & Mongo

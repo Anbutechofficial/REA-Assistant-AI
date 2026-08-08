@@ -6,7 +6,7 @@ venv/
 data/embeddings.json
 ─── Environment & Secrets ────────────────────────────────────────────────────
 .env
-.env.*
+!.env.example
 *.pem
 *.key
 
