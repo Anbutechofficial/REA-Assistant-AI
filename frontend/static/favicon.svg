@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none">
+  <!-- Rounded Background Container -->
+  <rect width="64" height="64" rx="16" fill="#0b1329"/>
+  <!-- Outer Modern Villa Roof Line -->
+  <path d="M12 26 L32 12 L52 26 V52 H12 Z" fill="#1e293b" stroke="#59FF00" stroke-width="3.5" stroke-linejoin="round"/>
+  <!-- Central High-Rise / Skyscraper Block -->
+  <rect x="22" y="24" width="20" height="28" rx="2" fill="#0f172a" stroke="#00f0ff" stroke-width="2.5"/>
+  <!-- Illuminated Windows (Lime & Cyan) -->
+  <rect x="26" y="29" width="4" height="5" rx="1" fill="#59FF00"/>
+  <rect x="34" y="29" width="4" height="5" rx="1" fill="#59FF00"/>
+  <rect x="26" y="38" width="4" height="5" rx="1" fill="#00f0ff"/>
+  <rect x="34" y="38" width="4" height="5" rx="1" fill="#00f0ff"/>
+  <!-- Entrance Arch Doorway -->
+  <path d="M28 52 V46 C28 44.5 29.5 43.5 32 43.5 C34.5 43.5 36 44.5 36 46 V52 Z" fill="#59FF00"/>
+</svg>

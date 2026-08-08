@@ -1,0 +1,5 @@
+- recommanded tech stack
+    - sveltekit 2, svelte 5, thretle(threejs for svelte), svelte/motion
+    - 
+
+create a frontend

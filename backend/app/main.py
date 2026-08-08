@@ -1,0 +1,59 @@
+import os
+import asyncio
+from fastapi import FastAPI, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from app.routes.assistant import router as assistant_router
+from app.rag.injection import ingest_csv
+from app.db.mongodb import get_vector_collection
+
+app = FastAPI(title="Real Estate Assistant AI")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(assistant_router)
+
+
+@app.on_event("startup")
+async def startup_db_check():
+    """Auto-ingest property CSV into MongoDB Atlas if collection is empty on startup."""
+    try:
+        collection = get_vector_collection()
+        count = await collection.count_documents({})
+        if count == 0:
+            print("MongoDB collection 'documents' is empty. Triggering background ingestion...")
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            csv_file = os.path.abspath(os.path.join(base_dir, "uploads", "Real_Estate_Assistant.csv"))
+            asyncio.create_task(ingest_csv(csv_file))
+        else:
+            print(f"MongoDB collection 'documents' already contains {count} chunks/documents.")
+    except Exception as e:
+        print(f"Startup MongoDB check note: {e}")
+
+
+@app.get("/")
+def landing_page():
+    return {
+        "message": "Real Estate Assistant AI is Running!"
+    }
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "BACKEND IS HEALTHY"
+    }
+
+
+@app.post("/ingest")
+async def trigger_ingestion(background_tasks: BackgroundTasks):
+    """Manual endpoint to trigger dataset ingestion into MongoDB Atlas."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    csv_file = os.path.abspath(os.path.join(base_dir, "uploads", "Real_Estate_Assistant.csv"))
+    background_tasks.add_task(ingest_csv, csv_file)
+    return {"message": "CSV ingestion started in background!"}

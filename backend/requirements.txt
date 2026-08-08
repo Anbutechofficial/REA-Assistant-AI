@@ -1,0 +1,20 @@
+# Web Framework & Server
+fastapi
+uvicorn
+python-multipart
+
+# Database & Mongo
+pymongo
+motor
+certifi
+
+# AI / ML & Data Processing
+google-genai
+litellm
+sentence-transformers
+numpy
+pandas
+
+# HTTP & Utilities
+requests
+python-dotenv
