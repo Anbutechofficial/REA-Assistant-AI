@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from app.core.models import QuestionRequest
 from app.core.config import Setting
 from app.rag.retrieval import retrieve
-from app.ai.prompt import build_prompt
+from app.ai.prompt import build_prompt, check_query_safety
 from app.ai.chatservice import ask_llm
 
 router = APIRouter()
@@ -13,6 +13,14 @@ router = APIRouter()
 
 @router.post("/ask")
 async def ask(request: QuestionRequest):
+
+    # Step 0: Security & Intent Check (Block prompt injections & off-topic queries)
+    is_safe, default_reply = check_query_safety(request.question)
+    if not is_safe:
+        return {
+            "question": request.question,
+            "answer": default_reply
+        }
 
     # Step 1: Retrieve Top 5 Properties via MongoDB Atlas Hybrid Search
     retrieved_docs = await retrieve(request.question)
@@ -28,6 +36,10 @@ async def ask(request: QuestionRequest):
         answer = ask_llm(prompt)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+    # Post-check LLM output: If LLM output fails or outputs injection tokens, enforce fallback
+    if "faaaa" in answer.lower() or "tamil teacher" in answer.lower():
+        answer = "Serupala Adipa"
 
     # Step 4: Return Response
     return {

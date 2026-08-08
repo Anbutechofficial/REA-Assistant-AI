@@ -278,7 +278,9 @@
     .overlay-container {
       overflow-y: auto;
       height: 100vh;
+      height: 100dvh;
       pointer-events: auto;
+      padding: 1.25rem;
     }
     
     .hero-section {
@@ -288,6 +290,65 @@
 
     .canvas-container {
       opacity: 0.45;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .overlay-container {
+      padding: 1rem;
+    }
+
+    .landing-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+
+    .logo {
+      font-size: 1.1rem;
+    }
+
+    .nav-links {
+      width: 100%;
+      justify-content: flex-start;
+      gap: 1rem;
+    }
+
+    .hero-section {
+      margin-left: 0;
+      margin-right: 0;
+      width: 100%;
+      padding-top: 1rem;
+      padding-bottom: 1rem;
+    }
+
+    .hero-card {
+      padding: 1.25rem;
+      width: 100%;
+      gap: 1rem;
+    }
+
+    .hero-card h1 {
+      font-size: 1.65rem;
+    }
+
+    .hero-desc {
+      font-size: 0.85rem;
+    }
+
+    .cta-group {
+      width: 100%;
+    }
+
+    .btn-primary {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .room-info-pill {
+      top: 6.5rem;
+      width: 90%;
+      justify-content: center;
     }
   }
 </style>
