@@ -144,10 +144,12 @@
     }
   }
 
+  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'https://real-estate-rag-backend.onrender.com';
+
   // Health check polling
   async function checkBackendHealth() {
     try {
-      const res = await fetch('http://localhost:8000/');
+      const res = await fetch(`${API_BASE_URL}/`);
       if (res.ok) {
         apiConnected = true;
         statusBannerText = 'All systems operational';
@@ -157,7 +159,7 @@
       }
     } catch (e) {
       apiConnected = false;
-      statusBannerText = 'Connection failed: Ensure FastAPI is running on port 8000';
+      statusBannerText = 'Connection failed: Connecting to backend server...';
     }
     const d = new Date();
     lastUpdatedTime = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -189,7 +191,7 @@
     });
 
     try {
-      const response = await fetch('http://localhost:8000/ask', {
+      const response = await fetch(`${API_BASE_URL}/ask`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -289,7 +291,7 @@
     formData.append('file', file);
 
     try {
-      const res = await fetch('http://localhost:8000/transcribe', {
+      const res = await fetch(`${API_BASE_URL}/transcribe`, {
         method: 'POST',
         body: formData
       });
