@@ -1,17 +1,21 @@
 # Keywords for real estate queries
 PROPERTY_KEYWORDS = [
     "property", "properties", "flat", "flats", "apartment", "apartments",
-    "house", "villa", "villas", "bhk", "1bhk", "2bhk", "3bhk", "4bhk", "5bhk", "price",
-    "lakh", "lakhs", "crore", "crores", "sqft", "square feet", "sq ft",
-    "buy", "rent", "budget", "cost", "rate", "real estate", "listing",
-    "listings", "land", "plot", "plots", "veedu", "idathula", "evvalavu",
-    "evalo", "irukka", "ceebros", "rwd", "corniche", "atlantic", "chennai",
-    "egmore", "austin", "bedroom", "home", "homes", "trend", "trends", "market",
-    "location", "address", "detail", "details", "contact", "value", "medavakkam",
-    "porur", "omr", "velachery", "tnagar", "adyar", "guduvancheri", "perungalathur",
-    "chromepet", "tambaram", "navalur", "koyambedu", "nanganallur", "madambakkam",
-    "sithalapakkam", "villivakkam", "vyasarpadi", "maduravoyal", "kovur", "urapakkam",
-    "pallavaram", "choolai", "mangadu", "kazhipattur", "thalambur", "mambakkam"
+    "house", "houses", "villa", "villas", "bhk", "1bhk", "2bhk", "3bhk", "4bhk", "5bhk",
+    "price", "prices", "pricing", "lakh", "lakhs", "crore", "crores", "sqft", "square feet", "sq ft",
+    "buy", "buying", "rent", "renting", "budget", "cost", "costs", "rate", "rates", "real estate",
+    "listing", "listings", "land", "plot", "plots", "veedu", "idathula", "evvalavu",
+    "evalo", "irukka", "ceebros", "rwd", "corniche", "atlantic", "chennai", "egmore",
+    "austin", "bedroom", "bedrooms", "home", "homes", "trend", "trends", "market",
+    "location", "locations", "address", "detail", "details", "contact", "value", "values",
+    "medavakkam", "porur", "omr", "velachery", "tnagar", "t nagar", "adyar", "guduvancheri",
+    "perungalathur", "chromepet", "tambaram", "navalur", "koyambedu", "nanganallur",
+    "madambakkam", "sithalapakkam", "villivakkam", "vyasarpadi", "maduravoyal", "kovur",
+    "urapakkam", "pallavaram", "choolai", "mangadu", "kazhipattur", "thalambur", "mambakkam",
+    "perumbakkam", "mogappair", "kolathur", "thiruvanmiyur", "thirumazhisai", "ambattur",
+    "avadi", "valasaravakkam", "madipakkam", "selaiyur", "poonamallee", "padur", "kelambakkam",
+    "perambur", "ecr", "coimbatore", "bangalore", "sholinganallur", "anna nagar", "option", "options",
+    "recommend", "recommendation", "which one", "available", "show"
 ]
 
 GREETINGS = {"hi", "hello", "hey", "good morning", "good evening", "vanakkam", "namaste", "greetings"}
@@ -39,10 +43,31 @@ PROMPT_INJECTION_PATTERNS = [
 ]
 
 
+import re
+
+def is_property_related_query(q_lower: str) -> bool:
+    """Checks whether the user query is real estate or property-related."""
+    if any(kw in q_lower for kw in PROPERTY_KEYWORDS):
+        return True
+
+    property_patterns = [
+        r'\b\d+\s*(?:bhk|bedroom|bed|room)\b',
+        r'\b\d+\s*(?:sqft|sq\.ft|square feet|sq ft)\b',
+        r'\b\d+(?:\.\d+)?\s*(?:lakh|lakhs|crore|crores|k|L|cr)\b',
+        r'\b(?:under|below|above|between|around|budget|price|cost|location|bhk|sqft|property|flat|apartment|house|villa)\b'
+    ]
+    for pattern in property_patterns:
+        if re.search(pattern, q_lower):
+            return True
+
+    return False
+
+
 def check_query_safety(question: str) -> tuple[bool, str]:
     """
     Verifies incoming user queries.
     Returns (is_safe, response_if_invalid).
+    Only allows real estate / property-related queries.
     """
     q_lower = question.lower().strip()
 
@@ -50,11 +75,14 @@ def check_query_safety(question: str) -> tuple[bool, str]:
     if q_lower in GREETINGS:
         return False, "Hello! Welcome to Real Estate AI Assistant. How can I help you find or analyze properties today?"
 
-    # Block only explicit prompt injection attacks
+    # Block prompt injection attacks
     if any(pattern in q_lower for pattern in PROMPT_INJECTION_PATTERNS):
         return False, "I am your Real Estate AI Assistant. Please ask property-related questions."
 
-    # Allow all user queries to proceed to retrieval and LLM
+    # Enforce real estate / property-related intent
+    if not is_property_related_query(q_lower):
+        return False, "I am your Real Estate AI Assistant. Please ask property-related questions."
+
     return True, ""
 
 
@@ -96,18 +124,20 @@ INSTRUCTIONS:
 
 Property 1
 Property Name: <Property Name>
-Price: <Price, e.g., Rs 440.0 Lakhs>
-Sqft: <Area sqft, e.g., 2600 sqft>
-BHK: <BHK configuration, e.g., 3 BHK>
+Location: <Location>
+Price: <Price, e.g., Rs 44.0 Lakhs>
+Sqft: <Area sqft, e.g., 1000 sqft>
+BHK: <BHK configuration, e.g., 2 BHK>
 
 Property 2
 Property Name: <Property Name>
+Location: <Location>
 Price: <Price>
 Sqft: <Sqft>
 BHK: <BHK>
 
 5. STRICT FORMATTING RULES:
-   - Use the exact line labels for property entries: "Property Name:", "Price:", "Sqft:", "BHK:".
+   - Use the exact line labels for property entries: "Property Name:", "Location:", "Price:", "Sqft:", "BHK:".
    - Do NOT use markdown bullet points (e.g. "- Price:"), bold bullet numbers (e.g. "1. **Name**"), or sub-bullets.
    - Do NOT include generic conversational intro text (such as "You're looking for properties...", "Based on the provided property context, I've found a few options for you:").
    - Do NOT include generic conversational concluding questions (such as "Would you like me to suggest some nearby areas...").
