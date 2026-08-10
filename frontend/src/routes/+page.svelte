@@ -26,7 +26,7 @@
     <header class="landing-header">
       <div class="logo">
         <Building2 class="logo-icon" size={28} />
-        <span>REA Assistant AI</span>
+        <span>Real Estate AI Assistant</span>
         <span class="version-tag">v0.1.0</span>
       </div>
 
@@ -71,7 +71,7 @@
 
     <!-- Footer -->
     <footer class="landing-footer">
-      <p>© 2026 Real Estate Assistant AI. Deep Retrieval and Audio Transcription System.</p>
+      <p>© 2026 Real Estate AI Assistant. Deep Retrieval and Audio Transcription System.</p>
     </footer>
 
   </div>

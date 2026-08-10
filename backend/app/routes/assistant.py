@@ -23,14 +23,19 @@ def sanitize_answer(answer: str) -> str:
     # Remove any stray [METADATA] header lines if leaked
     cleaned = re.sub(r'\[METADATA\][^\n]*\n?', '', answer, flags=re.IGNORECASE)
     
-    # Transform raw snake_case technical values into elegant human phrasing
+    # Strip introductory matching count lines and top matching properties header lines
+    cleaned = re.sub(r'(?:We found|There are)\s+\d+\s+matching properties[^\n]*\n?', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'Here are the top \d+ matching properties:?\n?', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'(?:Total matching properties|Matching properties count)(?: found)?:?\s*\d*\.?\n?', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'(?:Matching_Count|matching_count):\s*\d+\.?\n?', '', cleaned, flags=re.IGNORECASE)
+    
+    # Transform raw snake_case technical values into elegant human phrasing if any remain
     cleaned = re.sub(r'(?:Average_Property_Price|average_price):\s*(?:Rs\s*)?([\d\.]+)\s*(?:Lakhs)?', r'The average property price is Rs \1 Lakhs.', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'(?:Matching_Count|matching_count):\s*(\d+)', r'Total matching properties found: \1.', cleaned, flags=re.IGNORECASE)
     
     # Clean up residual snake_case keys if any remain
     cleaned = cleaned.replace("Average_Property_Price:", "Average Property Price:")
-    cleaned = cleaned.replace("Matching_Count:", "Matching Count:")
-    cleaned = cleaned.replace("Exact_Match_Found:", "Exact Match Found:")
+    cleaned = cleaned.replace("Matching_Count:", "")
+    cleaned = cleaned.replace("Exact_Match_Found:", "")
     cleaned = cleaned.replace("exact_match_found:", "")
     cleaned = cleaned.replace("total_database_listings:", "")
 

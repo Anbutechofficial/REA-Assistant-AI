@@ -8,14 +8,17 @@ PROPERTY_KEYWORDS = [
     "evalo", "irukka", "ceebros", "rwd", "corniche", "atlantic", "chennai", "egmore",
     "austin", "bedroom", "bedrooms", "home", "homes", "trend", "trends", "market",
     "location", "locations", "address", "detail", "details", "contact", "value", "values",
-    "medavakkam", "porur", "omr", "velachery", "tnagar", "t nagar", "adyar", "guduvancheri",
+    "medavakkam", "porur", "omr", "velachery", "tnagar", "t nagar", "adyar", "guduvancheri", "guduvanchery",
     "perungalathur", "chromepet", "tambaram", "navalur", "koyambedu", "nanganallur",
     "madambakkam", "sithalapakkam", "villivakkam", "vyasarpadi", "maduravoyal", "kovur",
     "urapakkam", "pallavaram", "choolai", "mangadu", "kazhipattur", "thalambur", "mambakkam",
     "perumbakkam", "mogappair", "kolathur", "thiruvanmiyur", "thirumazhisai", "ambattur",
     "avadi", "valasaravakkam", "madipakkam", "selaiyur", "poonamallee", "padur", "kelambakkam",
-    "perambur", "ecr", "coimbatore", "bangalore", "sholinganallur", "anna nagar", "option", "options",
-    "recommend", "recommendation", "which one", "available", "show"
+    "perambur", "ecr", "coimbatore", "bangalore", "sholinganallur", "anna nagar", "nungambakkam",
+    "mylapore", "alwarpet", "royapettah", "kilpauk", "kodambakkam", "guindy", "besant nagar",
+    "perungudi", "pallikaranai", "vadapalani", "ashok nagar", "saligramam", "virugambakkam",
+    "madhavaram", "royapuram", "tondiarpet", "washermanpet", "manali", "ennore", "puzhal",
+    "vandalur", "option", "options", "recommend", "recommendation", "which one", "available", "show"
 ]
 
 GREETINGS = {"hi", "hello", "hey", "good morning", "good evening", "vanakkam", "namaste", "greetings"}
@@ -98,14 +101,35 @@ def build_prompt(question: str, retrieved_docs: list) -> str:
         if text.startswith("[METADATA]"):
             meta_info = text
         else:
-            property_entries.append(text)
+            if text.strip():
+                property_entries.append(text)
 
+    # Branch 1: NO MATCH CASE - Dedicated clean prompt without property block templates
+    if not property_entries or "exact_match_found: False" in meta_info:
+        prompt = f"""
+You are a helpful and expert Real Estate Assistant.
+
+INSTRUCTIONS:
+1. No properties matching the user's requested criteria exist in our database.
+2. State clearly in polite, natural, professional language: "No properties found matching your requested criteria in our database. Please try searching with a different location, BHK, price range, or area preference."
+3. CRITICAL RULE: Do NOT output any "Property 1", "Property Name:", "Location:", "Price:", "Sqft:", or "BHK:" template blocks or empty placeholders under any circumstances. Output ONLY the clear no-match notification text.
+
+<retrieval_metadata>
+{meta_info}
+</retrieval_metadata>
+
+<user_query>
+{question}
+</user_query>
+
+Answer:
+"""
+        return prompt
+
+    # Branch 2: MATCH CASE - Format the retrieved properties
     context = ""
     for idx, item in enumerate(property_entries, start=1):
         context += f"Property {idx}:\n{item}\n\n"
-
-    if not context.strip():
-        context = "No direct database match found."
 
     prompt = f"""
 You are a helpful and expert Real Estate Assistant.
@@ -116,11 +140,9 @@ CRITICAL PRESENTATION RULES:
 
 INSTRUCTIONS:
 1. Analyze the user request inside <user_query> and use <property_context> and <retrieval_metadata>.
-2. IF <retrieval_metadata> indicates `Exact_Match_Found: False`:
-   - State clearly: "No properties found matching your exact search criteria. Here are the top available options:" before listing the properties.
-3. IF the user asks count, price, or statistical questions (such as "How many 2 BHK properties are available?", "What is the average price of the listed properties?", or market trend questions):
-   - State the answer directly first in clean, polished human language (e.g., "The average property price is ₹104.6 Lakhs across listed properties." or "There are 15 matching properties available in our database:"), then format the property blocks if applicable.
-4. Format ALL property listings strictly using this exact structure:
+2. IF the user asks count, price, or statistical questions (such as "How many 2 BHK properties are available?", "What is the average price of the listed properties?", or market trend questions):
+   - State the answer directly first in clean, polished human language (e.g., "The average property price is ₹104.6 Lakhs across listed properties." or "There are 15 matching properties available in our database:"), then format the top 5 property blocks.
+3. Format up to top 5 matching property listings strictly using this exact structure (do NOT list more than 5 properties):
 
 Property 1
 Property Name: <Property Name>
@@ -136,7 +158,7 @@ Price: <Price>
 Sqft: <Sqft>
 BHK: <BHK>
 
-5. STRICT FORMATTING RULES:
+4. STRICT FORMATTING RULES:
    - Use the exact line labels for property entries: "Property Name:", "Location:", "Price:", "Sqft:", "BHK:".
    - Do NOT use markdown bullet points (e.g. "- Price:"), bold bullet numbers (e.g. "1. **Name**"), or sub-bullets.
    - Do NOT include generic conversational intro text (such as "You're looking for properties...", "Based on the provided property context, I've found a few options for you:").

@@ -7,7 +7,7 @@ from app.rag.injection import ingest_csv
 from app.rag.retrieval import warmup_models
 from app.db.mongodb import get_vector_collection
 
-app = FastAPI(title="Real Estate Assistant AI")
+app = FastAPI(title="Real Estate AI Assistant")
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,7 +42,7 @@ async def startup_db_check():
 @app.get("/")
 def landing_page():
     return {
-        "message": "Real Estate Assistant AI is Running!"
+        "message": "Real Estate AI Assistant is Running!"
     }
 
 

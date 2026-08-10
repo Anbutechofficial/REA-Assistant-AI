@@ -278,17 +278,26 @@ async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dic
 
     # Location matching
     known_locations = [
-        "tambaram", "east tambaram", "west tambaram", "pallavaram", "chromepet",
-        "sholinganallur", "anna nagar", "egmore", "medavakkam", "porur", "omr",
-        "velachery", "t nagar", "adyar", "guduvancheri", "perungalathur",
-        "nanganallur", "madambakkam", "sithalapakkam", "villivakkam", "vyasarpadi",
-        "maduravoyal", "kovur", "urapakkam", "choolai", "mangadu", "kazhipattur",
-        "thalambur", "mambakkam", "perumbakkam", "mogappair", "kolathur",
-        "thiruvanmiyur", "thirumazhisai", "ambattur", "avadi", "valasaravakkam",
-        "madipakkam", "selaiyur", "poonamallee", "padur", "kelambakkam", "perambur",
-        "ecr", "coimbatore", "bangalore"
+        "t nagar", "t. nagar", "tnagar", "nungambakkam", "mylapore", "alwarpet", "egmore",
+        "royapettah", "adyar", "anna nagar", "kilpauk", "kodambakkam", "guindy", "velachery",
+        "thiruvanmiyur", "besant nagar", "sholinganallur", "perungudi", "medavakkam",
+        "pallikaranai", "perumbakkam", "omr", "ecr", "porur", "vadapalani", "ashok nagar",
+        "saligramam", "virugambakkam", "valasaravakkam", "ambattur", "mogappair", "poonamallee",
+        "avadi", "perambur", "madhavaram", "kolathur", "royapuram", "tondiarpet", "washermanpet",
+        "manali", "ennore", "vyasarpadi", "puzhal", "tambaram", "east tambaram", "west tambaram",
+        "chromepet", "pallavaram", "selaiyur", "vandalur", "guduvanchery", "guduvancheri",
+        "perungalathur", "nanganallur", "madambakkam", "sithalapakkam", "villivakkam",
+        "maduravoyal", "kovur", "urapakkam", "choolai", "mangadu", "kazhipattur", "thalambur",
+        "mambakkam", "thirumazhisai", "madipakkam", "padur", "kelambakkam", "siruseri",
+        "kotturpuram", "saidapet", "chetpet", "triplicane", "coimbatore", "bangalore"
     ]
-    found_locs = [loc for loc in known_locations if loc in q_lower]
+    q_loc_check = q_lower.replace(".", "")
+    found_locs = []
+    for loc in known_locations:
+        loc_clean = loc.replace(".", "")
+        if loc_clean in q_loc_check or loc in q_lower:
+            found_locs.append(loc_clean)
+    found_locs = list(dict.fromkeys(found_locs))
 
     # Price constraint extraction
     min_price, max_price = None, None
@@ -366,8 +375,11 @@ async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dic
     if mongo_rows:
         for r in mongo_rows:
             # BHK filter
-            if target_bhk and r["bhk"] != target_bhk:
-                continue
+            if target_bhk:
+                row_bhk_match = re.search(r'\d+', str(r["bhk"]))
+                row_bhk_num = row_bhk_match.group(0) if row_bhk_match else str(r["bhk"]).strip()
+                if row_bhk_num != str(target_bhk).strip():
+                    continue
 
             # Location filter
             if found_locs:
@@ -394,23 +406,9 @@ async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dic
     match_count = len(exact_matches)
 
     if not exact_matches:
-        # RETRIEVAL FAILURE / NO MATCH CASE
+        # RETRIEVAL FAILURE / NO MATCH CASE - No fallback property listings
         exact_match_found = False
-        # Fallback to general closest matches
-        fallback_list = list(mongo_rows)
-        if target_bhk:
-            bhk_fallback = [r for r in fallback_list if r["bhk"] == target_bhk]
-            if bhk_fallback:
-                fallback_list = bhk_fallback
-
-        if sort_by == "price_asc":
-            fallback_list.sort(key=lambda x: x["price_lakhs"])
-        elif sort_by == "price_desc":
-            fallback_list.sort(key=lambda x: x["price_lakhs"], reverse=True)
-        elif sort_by == "sqft_desc":
-            fallback_list.sort(key=lambda x: x["area_sqft"], reverse=True)
-
-        results = fallback_list[:top_k]
+        results = []
     else:
         # Apply sort order to exact matches
         if sort_by == "price_asc":

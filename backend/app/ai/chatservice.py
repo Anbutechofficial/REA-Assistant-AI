@@ -12,10 +12,11 @@ SYSTEM_PROMPT = (
     "When listing properties, format each property strictly as:\n\n"
     "Property 1\n"
     "Property Name: <Name>\n"
+    "Location: <Location>\n"
     "Price: <Price>\n"
     "Sqft: <Sqft>\n"
     "BHK: <BHK>\n\n"
-    "Do NOT include conversational introductory phrases, markdown bullet points, or concluding questions. Output only clean, direct property blocks."
+    "Do NOT include introductory phrases (such as 'We found X matching properties in our database', 'Here are the top 5 matching properties:', or 'Total matching properties:'), markdown bullet points, or concluding questions. Output only clean, direct property blocks."
 )
 
 

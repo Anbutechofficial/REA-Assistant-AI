@@ -18,7 +18,7 @@
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	<title>Real Estate Assistant AI</title>
+	<title>Real Estate AI Assistant</title>
 </svelte:head>
 
 {@render children()}

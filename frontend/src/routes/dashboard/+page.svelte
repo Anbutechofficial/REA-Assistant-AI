@@ -221,12 +221,15 @@
     if (!text) return '';
     let formatted = text
       .replace(/\[METADATA\][^\n]*\n?/gi, '')
+      .replace(/(?:We found|There are)\s+\d+\s+matching properties[^\n]*\n?/gi, '')
+      .replace(/Here are the top \d+ matching properties:?\n?/gi, '')
+      .replace(/(?:Total matching properties|Matching properties count)(?: found)?:?\s*\d*\.?\n?/gi, '')
+      .replace(/(?:Matching_Count|matching_count):\s*\d+\.?\n?/gi, '')
       .replace(/(?:Average_Property_Price|average_price):\s*(?:Rs\s*)?([\d\.]+)\s*(?:Lakhs)?/gi, 'The average property price is ₹$1 Lakhs.')
-      .replace(/(?:Matching_Count|matching_count):\s*(\d+)/gi, 'Total matching properties: $1.')
       .replace(/Exact_Match_Found:\s*(true|false)/gi, '')
       .replace(/Total_Database_Listings:\s*(\d+)/gi, '')
       .replace(/Average_Property_Price:/gi, 'Average Property Price:')
-      .replace(/Matching_Count:/gi, 'Matching Properties Count:')
+      .replace(/Matching_Count:/gi, '')
       .replace(/Exact_Match_Found:/gi, '')
       .trim();
     
@@ -302,11 +305,6 @@
       // Remove loading message
       messages.pop();
 
-      // Check if it's a trend question to show chart
-      const isTrend = currentQuestion.toLowerCase().includes('trend') || 
-                      currentQuestion.toLowerCase().includes('price') || 
-                      currentQuestion.toLowerCase().includes('market');
-
       // Parse answer text for lines or bullet points
       const rawAnswer = data.answer || "I couldn't find a suitable property based on the available data.";
       
@@ -315,8 +313,7 @@
         sender: 'ai',
         name: 'AI Assistant',
         time: 'Today, ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        text: rawAnswer,
-        showChart: isTrend
+        text: rawAnswer
       });
 
       // Save to general history
@@ -446,7 +443,7 @@
         </a>
         {#if !sidebarCollapsed || mobileMenuOpen}
           <div class="logo-text">
-            <h2>REA Assistant AI</h2>
+            <h2>Real Estate AI Assistant</h2>
             <span class="logo-ver">v0.1.0</span>
           </div>
         {/if}
@@ -603,63 +600,6 @@
                               </li>
                             {/each}
                           </ul>
-                        {/if}
-
-                        <!-- Render SVG Chart for Austin Market Trend -->
-                        {#if msg.showChart}
-                          <div class="chart-container glass-panel">
-                            <div class="chart-header-row">
-                              <h5>Median Price Trend (3-Bedroom Homes)</h5>
-                            </div>
-                            
-                            <!-- Custom SVG Chart matching mock layout -->
-                            <div class="svg-wrapper">
-                              <svg width="100%" height="150" viewBox="0 0 520 150" preserveAspectRatio="none">
-                                <defs>
-                                  <linearGradient id="chartGlow" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stop-color="#59FF00" stop-opacity="0.3"/>
-                                    <stop offset="100%" stop-color="#59FF00" stop-opacity="0.0"/>
-                                  </linearGradient>
-                                </defs>
-                                
-                                <!-- Y Axis Reference Lines -->
-                                <line x1="60" y1="20" x2="500" y2="20" stroke="var(--border-light)" stroke-dasharray="3,3" />
-                                <line x1="60" y1="60" x2="500" y2="60" stroke="var(--border-light)" stroke-dasharray="3,3" />
-                                <line x1="60" y1="100" x2="500" y2="100" stroke="var(--border-light)" stroke-dasharray="3,3" />
-                                <line x1="60" y1="130" x2="500" y2="130" stroke="var(--border-light)" />
-                                
-                                <!-- Y Labels -->
-                                <text x="15" y="24" fill="var(--text-muted)" font-size="10" font-family="Inter">$600K</text>
-                                <text x="15" y="64" fill="var(--text-muted)" font-size="10" font-family="Inter">$500K</text>
-                                <text x="15" y="104" fill="var(--text-muted)" font-size="10" font-family="Inter">$400K</text>
-                                <text x="15" y="134" fill="var(--text-muted)" font-size="10" font-family="Inter">$300K</text>
-                                
-                                <!-- Chart filled area -->
-                                <path d="M 60 120 L 130 110 L 200 95 L 270 82 L 340 70 L 410 55 L 480 38 L 480 130 L 60 130 Z" fill="url(#chartGlow)" />
-                                
-                                <!-- Line Plot -->
-                                <path d="M 60 120 L 130 110 L 200 95 L 270 82 L 340 70 L 410 55 L 480 38" fill="none" stroke="#59FF00" stroke-width="2.5" />
-                                
-                                <!-- Data points (circles) -->
-                                <circle cx="60" cy="120" r="4" fill="#ffffff" stroke="#59FF00" stroke-width="2" />
-                                <circle cx="130" cy="110" r="4" fill="#ffffff" stroke="#59FF00" stroke-width="2" />
-                                <circle cx="200" cy="95" r="4" fill="#ffffff" stroke="#59FF00" stroke-width="2" />
-                                <circle cx="270" cy="82" r="4" fill="#ffffff" stroke="#59FF00" stroke-width="2" />
-                                <circle cx="340" cy="70" r="4" fill="#ffffff" stroke="#59FF00" stroke-width="2" />
-                                <circle cx="410" cy="55" r="4" fill="#ffffff" stroke="#59FF00" stroke-width="2" />
-                                <circle cx="480" cy="38" r="4" fill="#59FF00" stroke="#ffffff" stroke-width="2" />
-
-                                <!-- X Labels -->
-                                <text x="45" y="146" fill="var(--text-muted)" font-size="9" font-family="Inter">Jul '23</text>
-                                <text x="115" y="146" fill="var(--text-muted)" font-size="9" font-family="Inter">Sep '23</text>
-                                <text x="185" y="146" fill="var(--text-muted)" font-size="9" font-family="Inter">Nov '23</text>
-                                <text x="255" y="146" fill="var(--text-muted)" font-size="9" font-family="Inter">Jan '24</text>
-                                <text x="325" y="146" fill="var(--text-muted)" font-size="9" font-family="Inter">Mar '24</text>
-                                <text x="395" y="146" fill="var(--text-muted)" font-size="9" font-family="Inter">May '24</text>
-                                <text x="465" y="146" fill="var(--text-muted)" font-size="9" font-family="Inter">Jul '24</text>
-                              </svg>
-                            </div>
-                          </div>
                         {/if}
 
                         {#if msg.summary}
