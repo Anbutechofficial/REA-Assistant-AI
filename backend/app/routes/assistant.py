@@ -33,8 +33,10 @@ def sanitize_answer(answer: str) -> str:
     cleaned = cleaned.replace("Exact_Match_Found:", "Exact Match Found:")
     cleaned = cleaned.replace("exact_match_found:", "")
     cleaned = cleaned.replace("total_database_listings:", "")
+    cleaned = re.sub(r'target_property_not_found:[^\n]*\n?', '', cleaned, flags=re.IGNORECASE)
 
     return cleaned.strip()
+
 
 
 @router.post("/ask")

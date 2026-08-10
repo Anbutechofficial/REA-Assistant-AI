@@ -15,7 +15,12 @@ PROPERTY_KEYWORDS = [
     "perumbakkam", "mogappair", "kolathur", "thiruvanmiyur", "thirumazhisai", "ambattur",
     "avadi", "valasaravakkam", "madipakkam", "selaiyur", "poonamallee", "padur", "kelambakkam",
     "perambur", "ecr", "coimbatore", "bangalore", "sholinganallur", "anna nagar", "option", "options",
-    "recommend", "recommendation", "which one", "available", "show"
+    "recommend", "recommendation", "which one", "available", "show",
+    "project", "builder", "residence", "residences", "heights", "towers", "gardens",
+    "enclave", "court", "park", "city", "town", "avenue", "society", "estate", "estates",
+    "view", "palace", "resort", "greens", "meadows", "square", "plaza", "casagrand",
+    "tvs", "radiance", "urbanrise", "jains", "kg", "south india shelters", "arun excello",
+    "indus", "darshan", "navins", "skr", "leo", "shri vana durga"
 ]
 
 GREETINGS = {"hi", "hello", "hey", "good morning", "good evening", "vanakkam", "namaste", "greetings"}
@@ -54,7 +59,7 @@ def is_property_related_query(q_lower: str) -> bool:
         r'\b\d+\s*(?:bhk|bedroom|bed|room)\b',
         r'\b\d+\s*(?:sqft|sq\.ft|square feet|sq ft)\b',
         r'\b\d+(?:\.\d+)?\s*(?:lakh|lakhs|crore|crores|k|L|cr)\b',
-        r'\b(?:under|below|above|between|around|budget|price|cost|location|bhk|sqft|property|flat|apartment|house|villa)\b'
+        r'\b(?:under|below|above|between|around|budget|price|cost|location|bhk|sqft|property|flat|apartment|house|villa|project|builder)\b'
     ]
     for pattern in property_patterns:
         if re.search(pattern, q_lower):
@@ -111,13 +116,18 @@ def build_prompt(question: str, retrieved_docs: list) -> str:
 You are a helpful and expert Real Estate Assistant.
 
 CRITICAL PRESENTATION RULES:
-- NEVER output raw variable names, code strings, or snake_case tags (e.g. NEVER output "Average_Property_Price: 104.6", "Matching_Count: 15", "Exact_Match_Found:", or "[METADATA]").
-- ALWAYS state statistics and counts in elegant, natural, professional human language (e.g., "The average property price is ₹104.6 Lakhs across listed properties." or "We found 15 matching properties in our database.").
+- NEVER output raw variable names, code strings, or snake_case tags (e.g. NEVER output "Average_Property_Price: 104.6", "Matching_Count: 15", "Exact_Match_Found:", "target_property_not_found:", or "[METADATA]").
+- ALWAYS state statistics and counts in elegant, natural, professional human language.
 
 INSTRUCTIONS:
 1. Analyze the user request inside <user_query> and use <property_context> and <retrieval_metadata>.
-2. IF <retrieval_metadata> indicates `Exact_Match_Found: False`:
-   - State clearly: "No properties found matching your exact search criteria. Here are the top available options:" before listing the properties.
+2. IF <retrieval_metadata> indicates `exact_match_found: False`:
+   - Extract the target property name or search criteria from `target_property_not_found` in <retrieval_metadata> if available.
+   - If a specific property name or detail is in `target_property_not_found` and it is not "None":
+     State clearly as your very first sentence: "We do not have details for '{question.strip()}' in our database." or "We do not have details for the requested property in our database."
+   - Otherwise:
+     State clearly as your very first sentence: "We do not have properties matching your exact search criteria in our database."
+   - THEN immediately follow with: "Here are related property options available in our database:" before listing the properties.
 3. IF the user asks count, price, or statistical questions (such as "How many 2 BHK properties are available?", "What is the average price of the listed properties?", or market trend questions):
    - State the answer directly first in clean, polished human language (e.g., "The average property price is ₹104.6 Lakhs across listed properties." or "There are 15 matching properties available in our database:"), then format the property blocks if applicable.
 4. Format ALL property listings strictly using this exact structure:
@@ -158,6 +168,7 @@ BHK: <BHK>
 Answer:
 """
     return prompt
+
 
 
 

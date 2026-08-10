@@ -3,6 +3,7 @@ import re
 import time
 import json
 import asyncio
+import difflib
 import numpy as np
 import certifi
 import pandas as pd
@@ -233,13 +234,180 @@ def cosine_similarity(vec1, vec2):
     return float(np.dot(vec1, vec2) / (norm1 * norm2))
 
 
+def extract_property_names_and_locations(mongo_rows: list[dict]):
+    """Dynamically extracts all property names and locations from loaded dataset."""
+    names = set()
+    locations = set()
+    for r in mongo_rows:
+        name = r.get("name", "").strip().lower()
+        if name:
+            names.add(name)
+        loc = r.get("location", "").strip().lower()
+        if loc:
+            locations.add(loc)
+            for part in loc.split(","):
+                part_clean = part.strip().lower()
+                if part_clean:
+                    locations.add(part_clean)
+    return list(names), list(locations)
+
+
+def find_fuzzy_property_name_matches(q_lower: str, known_names: list[str]) -> list[str]:
+    """
+    Finds database property names matching the query, handling spelling mistakes.
+    E.g. 'cebros atlantic' -> matches 'ceebros the atlantic'
+         'casagrand 1st city' -> matches 'casagrand first city'
+         'olivia green court' -> matches 'oliyas green court'
+         'jain advya' -> matches 'jains advaya'
+    """
+    matched_names = set()
+    q_tokens = re.findall(r'\w+', q_lower)
+    if not q_tokens or not known_names:
+        return []
+
+    # Direct word-boundary matching first
+    for name in known_names:
+        if name and re.search(rf'\b{re.escape(name)}\b', q_lower):
+            matched_names.add(name)
+
+    if matched_names:
+        return list(matched_names)
+
+    # N-gram fuzzy matching against known property names
+    n_grams = []
+    max_len = min(6, len(q_tokens) + 1)
+    for size in range(1, max_len):
+        for i in range(len(q_tokens) - size + 1):
+            n_grams.append(" ".join(q_tokens[i:i+size]))
+
+    stop_words = {
+        "the", "for", "in", "at", "and", "bhk", "flat", "flats", "house", "villa", "villas",
+        "property", "properties", "details", "info", "price", "budget", "show", "give", "tell",
+        "me", "is", "are", "available", "option", "options", "city", "town", "tower", "towers",
+        "park", "garden", "gardens", "court", "avenue", "plaza", "square", "residence", "residences",
+        "heights", "enclave", "homes", "home", "estate", "estates", "grand"
+    }
+
+    for gram in n_grams:
+        if len(gram) < 4 or gram in stop_words:
+            continue
+            
+        for cand in known_names:
+            if not cand or cand in stop_words:
+                continue
+            ratio = difflib.SequenceMatcher(None, gram, cand).ratio()
+            if ratio >= 0.72:
+                matched_names.add(cand)
+
+    return list(matched_names)
+
+
+def find_fuzzy_location_matches(q_lower: str, candidate_locations: list[str]) -> list[str]:
+    """
+    Finds locations in query with fuzzy matching for spelling mistakes.
+    E.g. 'velacherry' -> 'velachery', 'medavakkam' -> 'medavakkam', 'egmor' -> 'egmore'
+    """
+    matched_locs = set()
+    q_tokens = re.findall(r'\w+', q_lower)
+    
+    for loc in candidate_locations:
+        if loc and re.search(rf'\b{re.escape(loc)}\b', q_lower):
+            matched_locs.add(loc)
+            
+    if matched_locs:
+        return list(matched_locs)
+        
+    stop_tokens = {
+        "bhk", "sqft", "feet", "flat", "flats", "house", "villa", "villas", "price",
+        "lakh", "lakhs", "crore", "crores", "budget", "under", "above", "below", "city",
+        "town", "tower", "towers", "park", "garden", "gardens", "court", "avenue", "plaza"
+    }
+
+    for token in q_tokens:
+        if len(token) < 4 or token in stop_tokens:
+            continue
+        for loc in candidate_locations:
+            if not loc or len(loc) < 3 or loc in stop_tokens:
+                continue
+            ratio = difflib.SequenceMatcher(None, token, loc).ratio()
+            if ratio >= 0.78:
+                matched_locs.add(loc)
+                
+    return list(matched_locs)
+
+
+
+def extract_requested_property_or_criteria(q_lower: str, target_bhk=None, found_locs=None, min_price=None, max_price=None) -> str:
+    """
+    Extracts the property name or specific search criteria mentioned by the user
+    when no match is found in the database.
+    """
+    cleaned = re.sub(r'^(?:hi|hello|hey|vanakkam|tell me about|details of|details for|show me|do you have|is there|looking for|search for|info about|information on|any|available)\s*', '', q_lower, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*(?:available|in database|listed|here|please|irukka|evvalavu|evalo)\s*$', '', cleaned, flags=re.IGNORECASE).strip()
+
+    if cleaned and len(cleaned) > 2 and not re.match(r'^\d+\s*bhk$', cleaned):
+        return cleaned.title()
+
+    parts = []
+    if target_bhk:
+        parts.append(f"{target_bhk} BHK")
+    if found_locs:
+        parts.append(f"in {', '.join([l.title() for l in found_locs])}")
+    if max_price:
+        parts.append(f"under Rs {max_price} Lakhs")
+    if min_price:
+        parts.append(f"above Rs {min_price} Lakhs")
+
+    if parts:
+        return " ".join(parts)
+        
+    return q_lower.strip().title()
+
+
+def extract_unmatched_property_phrase(q_lower: str, dataset_names: list[str], fuzzy_matched_names: list[str], found_locs: list[str]) -> str | None:
+    """
+    Detects if the user specified a property/project name in their query
+    that does NOT exist in the database.
+    """
+    if fuzzy_matched_names:
+        return None
+
+    ignore_words = {
+        "hi", "hello", "hey", "vanakkam", "tell", "me", "about", "details", "of", "for",
+        "show", "give", "do", "you", "have", "is", "there", "looking", "search", "info",
+        "information", "on", "any", "available", "in", "at", "bhk", "bedroom", "bedrooms",
+        "bed", "room", "rooms", "flat", "flats", "apartment", "apartments", "house", "houses",
+        "villa", "villas", "property", "properties", "price", "prices", "pricing", "budget",
+        "cost", "costs", "rate", "rates", "under", "below", "above", "between", "around",
+        "lakh", "lakhs", "crore", "crores", "sqft", "square", "feet", "sq", "ft", "option",
+        "options", "irukka", "evvalavu", "evalo", "veedu", "idathula", "please", "city",
+        "town", "tower", "towers", "park", "garden", "gardens", "court", "avenue", "plaza",
+        "square", "residence", "residences", "heights", "enclave", "homes", "home", "estate",
+        "estates", "grand"
+    }
+    
+    for loc in found_locs:
+        for loc_word in loc.split():
+            ignore_words.add(loc_word.lower())
+
+    q_tokens = re.findall(r'\w+', q_lower)
+    unmatched_tokens = [t for t in q_tokens if t.lower() not in ignore_words and not t.isdigit()]
+
+    if unmatched_tokens:
+        unmatched_phrase = " ".join([t for t in q_tokens if t.lower() in [ut.lower() for ut in unmatched_tokens]])
+        return unmatched_phrase.strip().title()
+
+    return None
+
+
+
 async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dict]:
     """
     Smart multi-layer MongoDB property retrieval system:
     1. Conversational memory query resolution for follow-up questions.
     2. Primary data retrieval directly from MongoDB Atlas 'documents' collection.
     3. Atlas MongoDB Vector + Keyword Hybrid Search.
-    4. Strict constraint filtering (BHK, location, price, area), intent-aware sorting, and failure handling.
+    4. Strict constraint filtering (BHK, location, price, area), fuzzy property/location matching, intent-aware sorting, and failure handling.
     """
     effective_query = query
     if history:
@@ -266,6 +434,9 @@ async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dic
     q_lower = effective_query.lower().strip()
     mongo_rows = await load_mongo_properties()
 
+    # Dynamic dataset entity extraction
+    dataset_names, dataset_locs = extract_property_names_and_locations(mongo_rows)
+
     # Calculate overall dataset statistics directly from MongoDB dataset
     total_count = len(mongo_rows)
     all_prices = [r["price_lakhs"] for r in mongo_rows if r["price_lakhs"] > 0]
@@ -276,8 +447,8 @@ async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dic
     bhk_match = re.search(r'(\d+)\s*(?:bhk|bedroom|bed)', q_lower)
     target_bhk = bhk_match.group(1) if bhk_match else None
 
-    # Location matching
-    known_locations = [
+    # Known static locations + dynamic dataset locations
+    base_locations = [
         "tambaram", "east tambaram", "west tambaram", "pallavaram", "chromepet",
         "sholinganallur", "anna nagar", "egmore", "medavakkam", "porur", "omr",
         "velachery", "t nagar", "adyar", "guduvancheri", "perungalathur",
@@ -288,7 +459,16 @@ async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dic
         "madipakkam", "selaiyur", "poonamallee", "padur", "kelambakkam", "perambur",
         "ecr", "coimbatore", "bangalore"
     ]
-    found_locs = [loc for loc in known_locations if loc in q_lower]
+    all_candidate_locs = list(set(base_locations + dataset_locs))
+    
+    # Fuzzy location matching (handles typos like 'velacherry', 'medavakkam', etc.)
+    found_locs = find_fuzzy_location_matches(q_lower, all_candidate_locs)
+
+    # Fuzzy property name matching (handles typos like 'cebros atlantic', 'olivia green court', etc.)
+    fuzzy_matched_names = find_fuzzy_property_name_matches(q_lower, dataset_names)
+
+    # Detect if user specified a property name that is missing from dataset
+    missing_prop_name = extract_unmatched_property_phrase(q_lower, dataset_names, fuzzy_matched_names, found_locs)
 
     # Price constraint extraction
     min_price, max_price = None, None
@@ -346,7 +526,7 @@ async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dic
 
     # --- 2. Atlas VectorStore Primary Check (for generic unconstrained queries) ---
     query_embedding = await get_query_embedding(query)
-    if query_embedding and not any([sort_by != "relevance", min_price, max_price, min_sqft, max_sqft, target_bhk, bool(found_locs)]):
+    if query_embedding and not any([sort_by != "relevance", min_price, max_price, min_sqft, max_sqft, target_bhk, bool(found_locs), bool(fuzzy_matched_names), bool(missing_prop_name)]):
         try:
             matches = await asyncio.wait_for(
                 _vector_store.hybrid_search(
@@ -361,10 +541,16 @@ async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dic
         except (asyncio.TimeoutError, Exception):
             pass
 
-    # --- 3. Strict Parameter Filtering ---
+    # --- 3. Strict Parameter & Fuzzy Match Filtering ---
     exact_matches = []
-    if mongo_rows:
+    if mongo_rows and not missing_prop_name:
         for r in mongo_rows:
+            # Fuzzy property name filter (if user mentioned or fuzzy-matched a property name)
+            if fuzzy_matched_names:
+                name_hit = any(fn in r["name"].lower() for fn in fuzzy_matched_names)
+                if not name_hit:
+                    continue
+
             # BHK filter
             if target_bhk and r["bhk"] != target_bhk:
                 continue
@@ -392,12 +578,25 @@ async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dic
     # --- 4. Sorting & Formatting Results ---
     exact_match_found = True
     match_count = len(exact_matches)
+    target_property_not_found = None
 
-    if not exact_matches:
-        # RETRIEVAL FAILURE / NO MATCH CASE
+    if missing_prop_name or not exact_matches:
+        # RETRIEVAL FAILURE / MISSING PROPERTY CASE
         exact_match_found = False
-        # Fallback to general closest matches
+        target_property_not_found = missing_prop_name or extract_requested_property_or_criteria(
+            effective_query, target_bhk=target_bhk, found_locs=found_locs, min_price=min_price, max_price=max_price
+        )
+
+        # Fallback to related closest matches in the database
         fallback_list = list(mongo_rows)
+        
+        # If user searched for location, prioritize related properties in or near that location
+        if found_locs:
+            loc_fallback = [r for r in fallback_list if any(fl in r["location"].lower() or fl in r["name"].lower() for fl in found_locs)]
+            if loc_fallback:
+                fallback_list = loc_fallback
+
+        # If user searched for BHK, prioritize related properties with same BHK
         if target_bhk:
             bhk_fallback = [r for r in fallback_list if r["bhk"] == target_bhk]
             if bhk_fallback:
@@ -428,6 +627,7 @@ async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dic
     final_docs = []
     meta_header = (
         f"[METADATA] exact_match_found: {exact_match_found} | "
+        f"target_property_not_found: {target_property_not_found or 'None'} | "
         f"matching_count: {match_count} | "
         f"total_database_listings: {total_count} | "
         f"average_price: Rs {avg_price} Lakhs"
@@ -438,6 +638,8 @@ async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dic
         final_docs.append({"score": 1.0, "text": doc["str"]})
 
     return final_docs
+
+
 
 
 
