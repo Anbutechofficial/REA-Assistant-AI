@@ -10,20 +10,50 @@ from app.ai.chatservice import ask_llm
 
 router = APIRouter()
 
+_ask_response_cache: dict[str, dict] = {}
+MAX_RESPONSE_CACHE_SIZE = 300
+
+
+import re
+
+def sanitize_answer(answer: str) -> str:
+    if not answer:
+        return answer
+    
+    # Remove any stray [METADATA] header lines if leaked
+    cleaned = re.sub(r'\[METADATA\][^\n]*\n?', '', answer, flags=re.IGNORECASE)
+    
+    # Transform raw snake_case technical values into elegant human phrasing
+    cleaned = re.sub(r'(?:Average_Property_Price|average_price):\s*(?:Rs\s*)?([\d\.]+)\s*(?:Lakhs)?', r'The average property price is Rs \1 Lakhs.', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'(?:Matching_Count|matching_count):\s*(\d+)', r'Total matching properties found: \1.', cleaned, flags=re.IGNORECASE)
+    
+    # Clean up residual snake_case keys if any remain
+    cleaned = cleaned.replace("Average_Property_Price:", "Average Property Price:")
+    cleaned = cleaned.replace("Matching_Count:", "Matching Count:")
+    cleaned = cleaned.replace("Exact_Match_Found:", "Exact Match Found:")
+    cleaned = cleaned.replace("exact_match_found:", "")
+    cleaned = cleaned.replace("total_database_listings:", "")
+
+    return cleaned.strip()
+
 
 @router.post("/ask")
 async def ask(request: QuestionRequest):
+    cache_key = request.question.strip().lower()
+    if cache_key in _ask_response_cache:
+        return _ask_response_cache[cache_key]
 
     # Step 0: Security & Intent Check (Block prompt injections & off-topic queries)
     is_safe, default_reply = check_query_safety(request.question)
     if is_safe == False:
-        return {
+        res = {
             "question": request.question,
             "answer": default_reply
         }
+        return res
 
-    # Step 1: Retrieve Top 5 Properties via MongoDB Atlas Hybrid Search
-    retrieved_docs = await retrieve(request.question)
+    # Step 1: Retrieve Top 5 Properties via MongoDB Atlas Hybrid Search / Smart RAM Filter
+    retrieved_docs = await retrieve(request.question, history=request.history)
 
     # Step 2: Build Prompt
     prompt = build_prompt(
@@ -31,18 +61,24 @@ async def ask(request: QuestionRequest):
         retrieved_docs
     )
 
-    # Step 3: Get LLM Response
+    # Step 3: Get LLM Response asynchronously
     try:
-        answer = ask_llm(prompt)
-    except RuntimeError as e:
+        raw_answer = await ask_llm(prompt)
+        answer = sanitize_answer(raw_answer)
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-    # Step 4: Return Response
-    return {
+    result = {
         "question": request.question,
         "answer": answer
     }
+
+    if len(_ask_response_cache) > MAX_RESPONSE_CACHE_SIZE:
+        _ask_response_cache.clear()
+    _ask_response_cache[cache_key] = result
+
+    # Step 4: Return Response
+    return result
 
 
 
@@ -66,14 +102,17 @@ async def transcribe_audio(file: UploadFile = File(...)):
         "file": (file.filename or "audio.webm", audio_data, file.content_type or "audio/webm")
     }
     data = {
-        "model": "whisper-large-v3",
+        "model": "whisper-large-v3-turbo",
         "response_format": "json",
         "language": "en",
         "prompt": "Transcribe spoken speech strictly in English or Tanglish (Tamil words written using English/Latin alphabet, e.g. '3 BHK flat in Egmore, budget 50 lakhs irukka'). Output ONLY in English or Tanglish using standard English letters."
     }
 
     try:
-        response = requests.post(url, headers=headers, files=files, data=data)
+        def _call_transcribe():
+            return requests.post(url, headers=headers, files=files, data=data, timeout=20)
+
+        response = await asyncio.to_thread(_call_transcribe)
         response.raise_for_status()
         result = response.json()
         return {"text": result.get("text", "")}

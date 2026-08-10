@@ -1,6 +1,8 @@
 import os
+import re
 import time
 import json
+import asyncio
 import numpy as np
 import certifi
 import pandas as pd
@@ -16,6 +18,11 @@ load_dotenv(os.path.join(base_dir, "..", "..", ".env"))
 
 _vector_store = VectorStore()
 _st_model = None
+_gemini_client = None
+_query_embedding_cache: dict[str, list[float]] = {}
+_local_properties_cache: list[dict] = None
+_csv_cache: list[dict] = None
+MAX_EMBEDDING_CACHE_SIZE = 1000
 
 
 def get_sentence_model():
@@ -24,50 +31,87 @@ def get_sentence_model():
         try:
             from sentence_transformers import SentenceTransformer
             _st_model = SentenceTransformer("all-MiniLM-L6-v2")
-        except Exception:
+        except Exception as e:
+            print(f"SentenceTransformer initialization note: {e}")
             _st_model = False
     return _st_model if _st_model else None
 
 
-def get_query_embedding(query: str) -> list[float]:
-    """Generate embedding for query using Gemini API or SentenceTransformers fallback."""
-    gemini_key = Setting.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
+def warmup_models():
+    """Pre-warm sentence embedding model and local dataset into RAM at startup."""
+    try:
+        get_sentence_model()
+        load_local_properties()
+        load_csv_properties()
+        print("⚡ Warmup completed: SentenceTransformer and property datasets loaded into RAM!")
+    except Exception as e:
+        print(f"Warmup warning: {e}")
 
-    if gemini_key:
-        for attempt in range(2):
-            try:
-                from google import genai
-                from google.genai import types
-                gemini_client = genai.Client(api_key=gemini_key)
-                res = gemini_client.models.embed_content(
-                    model="gemini-embedding-001",
-                    contents=query,
-                    config=types.EmbedContentConfig(output_dimensionality=768),
-                )
-                if hasattr(res, "embeddings") and res.embeddings:
-                    return list(res.embeddings[0].values)
-                if hasattr(res, "embedding") and hasattr(res.embedding, "values"):
-                    return list(res.embedding.values)
-            except Exception as e:
-                if ("429" in str(e) or "RESOURCE_EXHAUSTED" in str(e)) and attempt < 1:
-                    time.sleep(2)
-                else:
-                    print(f"Gemini query embedding note ({e}).")
-                    break
 
+def _sync_get_query_embedding(query: str) -> list[float]:
+    global _gemini_client, _query_embedding_cache
+    normalized_q = query.strip().lower()
+    if normalized_q in _query_embedding_cache:
+        return _query_embedding_cache[normalized_q]
+
+    # Fast path 1: Local SentenceTransformer model (<15ms execution time)
     st_model = get_sentence_model()
     if st_model:
         try:
             emb = st_model.encode(query).tolist()
             if len(emb) < 768:
                 emb = emb + [0.0] * (768 - len(emb))
-            return emb[:768]
+            emb = emb[:768]
+            if len(_query_embedding_cache) > MAX_EMBEDDING_CACHE_SIZE:
+                _query_embedding_cache.clear()
+            _query_embedding_cache[normalized_q] = emb
+            return emb
         except Exception as e:
-            print(f"SentenceTransformer embedding failed: {e}")
+            print(f"SentenceTransformer embedding note: {e}")
+
+    # Path 2: Gemini API embedding fallback
+    gemini_key = Setting.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
+    if gemini_key:
+        try:
+            if _gemini_client is None:
+                from google import genai
+                _gemini_client = genai.Client(api_key=gemini_key)
+            from google.genai import types
+            res = _gemini_client.models.embed_content(
+                model="gemini-embedding-001",
+                contents=query,
+                config=types.EmbedContentConfig(output_dimensionality=768),
+            )
+            emb = []
+            if hasattr(res, "embeddings") and res.embeddings:
+                emb = list(res.embeddings[0].values)
+            elif hasattr(res, "embedding") and hasattr(res.embedding, "values"):
+                emb = list(res.embedding.values)
+
+            if emb:
+                if len(_query_embedding_cache) > MAX_EMBEDDING_CACHE_SIZE:
+                    _query_embedding_cache.clear()
+                _query_embedding_cache[normalized_q] = emb
+                return emb
+        except Exception as e:
+            print(f"Gemini query embedding note ({e}).")
+
     return []
 
 
-def load_local_properties():
+async def get_query_embedding(query: str) -> list[float]:
+    """Generate query embedding asynchronously with fast in-memory caching."""
+    normalized_q = query.strip().lower()
+    if normalized_q in _query_embedding_cache:
+        return _query_embedding_cache[normalized_q]
+    return await asyncio.to_thread(_sync_get_query_embedding, query)
+
+
+def load_local_properties() -> list[dict]:
+    global _local_properties_cache
+    if _local_properties_cache is not None:
+        return _local_properties_cache
+
     embeddings_file = os.path.abspath(os.path.join(base_dir, "..", "uploads", "embeddings.json"))
     if not os.path.exists(embeddings_file):
         embeddings_file = os.path.abspath(os.path.join(base_dir, "..", "..", "data", "embeddings.json"))
@@ -75,10 +119,48 @@ def load_local_properties():
     if os.path.exists(embeddings_file):
         try:
             with open(embeddings_file, "r", encoding="utf-8") as file:
-                return json.load(file)
+                _local_properties_cache = json.load(file)
+                return _local_properties_cache
         except Exception:
             pass
-    return []
+    _local_properties_cache = []
+    return _local_properties_cache
+
+
+import re
+
+def load_csv_properties() -> list[dict]:
+    global _csv_cache
+    if _csv_cache is not None:
+        return _csv_cache
+
+    csv_file = os.path.abspath(os.path.join(base_dir, "..", "uploads", "Real_Estate_Assistant.csv"))
+    if os.path.exists(csv_file):
+        try:
+            df = pd.read_csv(csv_file)
+            rows = []
+            for _, row in df.iterrows():
+                p_name = str(row.get('name', '')).strip()
+                p_loc = str(row.get('location', '')).strip()
+                p_bhk = str(row.get('bhk', '')).strip()
+                p_sqft = float(row.get('area_sqft', 0)) if pd.notnull(row.get('area_sqft')) else 0
+                p_price = float(row.get('price_lakhs', 0)) if pd.notnull(row.get('price_lakhs')) else 0
+
+                row_str = f"{p_name} in {p_loc}: {p_bhk} BHK, {int(p_sqft) if p_sqft.is_integer() else p_sqft} sqft, Rs {p_price} Lakhs"
+                rows.append({
+                    "name": p_name,
+                    "location": p_loc,
+                    "bhk": p_bhk,
+                    "area_sqft": p_sqft,
+                    "price_lakhs": p_price,
+                    "str": row_str
+                })
+            _csv_cache = rows
+            return _csv_cache
+        except Exception as ex:
+            print(f"CSV load exception: {ex}")
+    _csv_cache = []
+    return _csv_cache
 
 
 def cosine_similarity(vec1, vec2):
@@ -92,70 +174,210 @@ def cosine_similarity(vec1, vec2):
     return float(np.dot(vec1, vec2) / (norm1 * norm2))
 
 
-async def retrieve(query: str, top_k: int = 5) -> list[dict]:
+async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dict]:
     """
-    Retrieve top_k matching documents using MongoDB Atlas VectorStore (Hybrid Search: Vector + Keyword RRF).
-    Falls back to local embedding cosine similarity if Atlas search is empty or uninitialized.
+    Smart multi-layer property retrieval system:
+    1. Conversational memory query resolution for follow-up questions.
+    2. Atlas MongoDB Vector + Keyword Hybrid Search (if configured & online).
+    3. Intelligent RAM CSV Parameter Search with strict constraint filtering, intent-aware sorting, and failure handling.
     """
-    query_embedding = get_query_embedding(query)
+    effective_query = query
+    if history:
+        last_user_q = ""
+        for item in reversed(history):
+            role = item.get("role") or item.get("sender") or ""
+            text = item.get("content") or item.get("text") or ""
+            if role in ["user", "human", "You"] and text.strip() and text.strip() != query.strip():
+                last_user_q = text.strip()
+                break
 
-    # 1. Primary: VectorStore Hybrid Search in MongoDB Atlas
-    if query_embedding:
+        if last_user_q and any(w in query.lower() for w in [
+            "which one", "what about", "cheapest", "largest", "another option",
+            "first one", "recommend", "3 bhk", "2 bhk", "1 bhk", "its area", "its price",
+            "like that", "instead", "from these", "difference"
+        ]):
+            curr_bhk = re.search(r'(\d+)\s*(?:bhk|bedroom)', query.lower())
+            if curr_bhk:
+                last_user_q_mod = re.sub(r'\d+\s*(?:bhk|bedroom)', f"{curr_bhk.group(1)} BHK", last_user_q, flags=re.IGNORECASE)
+                effective_query = f"{last_user_q_mod} - {query}"
+            else:
+                effective_query = f"{last_user_q} - {query}"
+
+    q_lower = effective_query.lower().strip()
+    csv_rows = load_csv_properties()
+
+    # Calculate overall dataset statistics for answer enrichment
+    total_count = len(csv_rows)
+    all_prices = [r["price_lakhs"] for r in csv_rows if r["price_lakhs"] > 0]
+    avg_price = round(sum(all_prices) / max(len(all_prices), 1), 1) if all_prices else 0.0
+
+    # --- 1. Parameter & Intent Extraction ---
+    # BHK matching
+    bhk_match = re.search(r'(\d+)\s*(?:bhk|bedroom|bed)', q_lower)
+    target_bhk = bhk_match.group(1) if bhk_match else None
+
+    # Location matching
+    known_locations = [
+        "tambaram", "east tambaram", "west tambaram", "pallavaram", "chromepet",
+        "sholinganallur", "anna nagar", "egmore", "medavakkam", "porur", "omr",
+        "velachery", "t nagar", "adyar", "guduvancheri", "perungalathur",
+        "nanganallur", "madambakkam", "sithalapakkam", "villivakkam", "vyasarpadi",
+        "maduravoyal", "kovur", "urapakkam", "choolai", "mangadu", "kazhipattur",
+        "thalambur", "mambakkam", "perumbakkam", "mogappair", "kolathur",
+        "thiruvanmiyur", "thirumazhisai", "ambattur", "avadi", "valasaravakkam",
+        "madipakkam", "selaiyur", "poonamallee", "padur", "kelambakkam", "perambur",
+        "ecr", "coimbatore", "bangalore"
+    ]
+    found_locs = [loc for loc in known_locations if loc in q_lower]
+
+    # Price constraint extraction
+    min_price, max_price = None, None
+    between_price = re.search(r'between\s*₹?\s*(\d+(?:\.\d+)?)\s*(?:and|to|-)\s*₹?\s*(\d+(?:\.\d+)?)', q_lower)
+    if between_price:
+        min_price = float(between_price.group(1))
+        max_price = float(between_price.group(2))
+    else:
+        under_price = re.search(r'(?:under|below|less than|within|max|budget of)\s*₹?\s*(\d+(?:\.\d+)?)', q_lower)
+        if under_price and 'sqft' not in q_lower[under_price.start():under_price.end()+12]:
+            max_price = float(under_price.group(1))
+        above_price = re.search(r'(?:above|more than|greater than|min)\s*₹?\s*(\d+(?:\.\d+)?)', q_lower)
+        if above_price and 'sqft' not in q_lower[above_price.start():above_price.end()+12]:
+            v = float(above_price.group(1))
+            if v < 400: # Max individual price filter cap
+                min_price = v
+        around_price = re.search(r'around\s*₹?\s*(\d+(?:\.\d+)?)', q_lower)
+        if around_price and 'sqft' not in q_lower[around_price.start():around_price.end()+12]:
+            v = float(around_price.group(1))
+            if v < 400:
+                min_price = v * 0.75
+                max_price = v * 1.25
+
+    # Sqft constraint extraction
+    min_sqft, max_sqft = None, None
+    between_sqft = re.search(r'between\s*(\d+)\s*(?:and|to|-)\s*(\d+)\s*(?:sqft|sq\.ft|square feet)?', q_lower)
+    if between_sqft:
+        min_sqft = float(between_sqft.group(1))
+        max_sqft = float(between_sqft.group(2))
+    else:
+        above_sqft = re.search(r'(?:above|more than|at least|greater than)\s*(\d+)\s*(?:sqft|sq\.ft|square feet)?', q_lower)
+        if above_sqft:
+            v = float(above_sqft.group(1))
+            if v >= 100: # Sqft cap check
+                min_sqft = v
+        under_sqft = re.search(r'(?:below|under|less than)\s*(\d+)\s*(?:sqft|sq\.ft|square feet)', q_lower)
+        if under_sqft:
+            max_sqft = float(under_sqft.group(1))
+        around_sqft = re.search(r'around\s*(\d+)\s*(?:sqft|sq\.ft|square feet)', q_lower)
+        if around_sqft:
+            v = float(around_sqft.group(1))
+            min_sqft = v * 0.8
+            max_sqft = v * 1.2
+
+    # Intent-aware sorting
+    sort_by = "relevance"
+    if any(w in q_lower for w in ["cheapest", "lowest price", "least expensive", "minimum price", "affordable"]):
+        sort_by = "price_asc"
+    elif any(w in q_lower for w in ["most expensive", "costliest", "highest price", "maximum price", "luxury"]):
+        sort_by = "price_desc"
+    elif any(w in q_lower for w in ["largest", "biggest", "maximum area", "highest sqft", "spacious"]):
+        sort_by = "sqft_desc"
+    elif any(w in q_lower for w in ["best value", "value for money"]):
+        sort_by = "value_per_sqft"
+
+    # --- 2. Atlas VectorStore Primary Check (for generic unconstrained queries) ---
+    query_embedding = await get_query_embedding(query)
+    if query_embedding and not any([sort_by != "relevance", min_price, max_price, min_sqft, max_sqft, target_bhk, bool(found_locs)]):
         try:
-            matches = await _vector_store.hybrid_search(
-                query_text=query,
-                query_embedding=query_embedding,
-                top_k=top_k
+            matches = await asyncio.wait_for(
+                _vector_store.hybrid_search(
+                    query_text=query,
+                    query_embedding=query_embedding,
+                    top_k=top_k
+                ),
+                timeout=1.0
             )
             if matches:
-                return [
-                    {
-                        "score": m.get("score", 0.0),
-                        "text": m.get("text", "")
-                    }
-                    for m in matches
-                ]
-        except Exception as e:
-            print(f"VectorStore hybrid search encountered an issue: {e}")
+                return [{"score": m.get("score", 0.0), "text": m.get("text", "")} for m in matches]
+        except (asyncio.TimeoutError, Exception):
+            pass
 
-    # 2. Fallback: Local JSON Embeddings
-    local_docs = load_local_properties()
-    if local_docs and query_embedding:
-        scores = []
-        for doc in local_docs:
-            doc_emb = doc.get("embedding")
-            text_content = doc.get("text", "")
-            if doc_emb and len(doc_emb) == len(query_embedding):
-                score = cosine_similarity(query_embedding, doc_emb)
-            else:
-                score = 0.0
-            scores.append({"score": score, "text": text_content})
-        scores.sort(key=lambda x: x["score"], reverse=True)
-        if scores and scores[0]["score"] > 0:
-            return scores[:top_k]
+    # --- 3. Strict Parameter Filtering ---
+    exact_matches = []
+    if csv_rows:
+        for r in csv_rows:
+            # BHK filter
+            if target_bhk and r["bhk"] != target_bhk:
+                continue
 
-    # 3. Ultimate Fallback: Direct CSV keyword matching
-    csv_file = os.path.abspath(os.path.join(base_dir, "..", "uploads", "Real_Estate_Assistant.csv"))
-    if os.path.exists(csv_file):
-        try:
-            df = pd.read_csv(csv_file)
-            keywords = [w.lower() for w in query.replace("?", "").replace(",", "").split() if len(w) > 1]
-            matches = []
-            for _, row in df.iterrows():
-                row_str = f"{row.get('name', '')} in {row.get('location', '')}: {row.get('bhk', '')} BHK, {row.get('area_sqft', '')} sqft, Rs {row.get('price_lakhs', '')} Lakhs"
-                row_lower = row_str.lower()
-                
-                # Check for BHK matching (e.g. 3bhk or 3 bhk)
-                clean_q = query.lower().replace(" ", "")
-                if "3bhk" in clean_q or ("3" in keywords and "bhk" in clean_q):
-                    if str(row.get("bhk", "")).strip().startswith("3") or "3 bhk" in row_lower:
-                        matches.append({"score": 0.9, "text": row_str})
-                elif any(k in row_lower for k in keywords):
-                    matches.append({"score": 0.5, "text": row_str})
-            if matches:
-                return matches[:top_k]
-        except Exception as ex:
-            print(f"CSV fallback search exception: {ex}")
+            # Location filter
+            if found_locs:
+                loc_hit = any(fl in r["location"].lower() or fl in r["name"].lower() for fl in found_locs)
+                if not loc_hit:
+                    continue
 
-    return []
+            # Price filters
+            if min_price is not None and r["price_lakhs"] < min_price:
+                continue
+            if max_price is not None and r["price_lakhs"] > max_price:
+                continue
+
+            # Sqft filters
+            if min_sqft is not None and r["area_sqft"] < min_sqft:
+                continue
+            if max_sqft is not None and r["area_sqft"] > max_sqft:
+                continue
+
+            exact_matches.append(r)
+
+    # --- 4. Sorting & Formatting Results ---
+    exact_match_found = True
+    match_count = len(exact_matches)
+
+    if not exact_matches:
+        # RETRIEVAL FAILURE / NO MATCH CASE
+        exact_match_found = False
+        # Fallback to general closest matches
+        fallback_list = list(csv_rows)
+        if target_bhk:
+            bhk_fallback = [r for r in fallback_list if r["bhk"] == target_bhk]
+            if bhk_fallback:
+                fallback_list = bhk_fallback
+
+        if sort_by == "price_asc":
+            fallback_list.sort(key=lambda x: x["price_lakhs"])
+        elif sort_by == "price_desc":
+            fallback_list.sort(key=lambda x: x["price_lakhs"], reverse=True)
+        elif sort_by == "sqft_desc":
+            fallback_list.sort(key=lambda x: x["area_sqft"], reverse=True)
+
+        results = fallback_list[:top_k]
+    else:
+        # Apply sort order to exact matches
+        if sort_by == "price_asc":
+            exact_matches.sort(key=lambda x: x["price_lakhs"])
+        elif sort_by == "price_desc":
+            exact_matches.sort(key=lambda x: x["price_lakhs"], reverse=True)
+        elif sort_by == "sqft_desc":
+            exact_matches.sort(key=lambda x: x["area_sqft"], reverse=True)
+        elif sort_by == "value_per_sqft":
+            exact_matches.sort(key=lambda x: (x["price_lakhs"] * 100000) / max(x["area_sqft"], 1))
+
+        results = exact_matches[:top_k]
+
+    # Format document list with metadata headers
+    final_docs = []
+    meta_header = (
+        f"[METADATA] exact_match_found: {exact_match_found} | "
+        f"matching_count: {match_count} | "
+        f"total_database_listings: {total_count} | "
+        f"average_price: Rs {avg_price} Lakhs"
+    )
+    final_docs.append({"score": 1.0, "text": meta_header})
+
+    for doc in results:
+        final_docs.append({"score": 1.0, "text": doc["str"]})
+
+    return final_docs
+
+
 

@@ -4,6 +4,7 @@ from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes.assistant import router as assistant_router
 from app.rag.injection import ingest_csv
+from app.rag.retrieval import warmup_models
 from app.db.mongodb import get_vector_collection
 
 app = FastAPI(title="Real Estate Assistant AI")
@@ -21,7 +22,8 @@ app.include_router(assistant_router)
 
 @app.on_event("startup")
 async def startup_db_check():
-    """Auto-ingest property CSV into MongoDB Atlas if collection is empty on startup."""
+    """Auto-ingest property CSV into MongoDB Atlas if collection is empty, and warm up models."""
+    asyncio.create_task(asyncio.to_thread(warmup_models))
     try:
         collection = get_vector_collection()
         count = await collection.count_documents({})
@@ -34,6 +36,7 @@ async def startup_db_check():
             print(f"MongoDB collection 'documents' already contains {count} chunks/documents.")
     except Exception as e:
         print(f"Startup MongoDB check note: {e}")
+
 
 
 @app.get("/")

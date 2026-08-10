@@ -47,7 +47,11 @@
   $effect(() => {
     if (quickAskQuestion !== undefined && textareaRef) {
       textareaRef.style.height = 'auto';
-      textareaRef.style.height = Math.min(textareaRef.scrollHeight, 180) + 'px';
+      if (quickAskQuestion.trim().length > 0) {
+        textareaRef.style.height = Math.min(textareaRef.scrollHeight, 120) + 'px';
+      } else {
+        textareaRef.style.height = '38px';
+      }
     }
   });
   
@@ -146,12 +150,74 @@
     }
   }
 
-  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'https://real-estate-rag-backend.onrender.com';
+  let API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000';
+  let activeWorkingUrl: string | null = null;
+
+  // Smart non-blocking fetch helper with URL caching and 1.5s timeout per target
+  async function fetchWithFallback(path: string, init?: RequestInit): Promise<Response> {
+    const targets = [
+      activeWorkingUrl,
+      API_BASE_URL,
+      'http://localhost:8000',
+      'http://127.0.0.1:8000',
+      'https://real-estate-rag-backend.onrender.com'
+    ];
+
+    const uniqueTargets = [...new Set(targets.filter(Boolean))] as string[];
+    let lastError: any = null;
+
+    for (const base of uniqueTargets) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
+
+      try {
+        const cleanBase = base.replace(/\/+$/, '');
+        const url = `${cleanBase}${path}`;
+        const requestInit = {
+          ...init,
+          signal: controller.signal
+        };
+
+        const res = await fetch(url, requestInit);
+        clearTimeout(timeoutId);
+        if (res) {
+          activeWorkingUrl = cleanBase;
+          API_BASE_URL = cleanBase;
+          return res;
+        }
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+          console.warn(`Connection timeout for ${base}`);
+        }
+        lastError = err;
+      }
+    }
+    activeWorkingUrl = null;
+    throw lastError || new Error('Network error: Unable to connect to FastAPI backend server.');
+  }
+
+
+  function formatMessageText(text: string): string {
+    if (!text) return '';
+    let formatted = text
+      .replace(/\[METADATA\][^\n]*\n?/gi, '')
+      .replace(/(?:Average_Property_Price|average_price):\s*(?:Rs\s*)?([\d\.]+)\s*(?:Lakhs)?/gi, 'The average property price is ₹$1 Lakhs.')
+      .replace(/(?:Matching_Count|matching_count):\s*(\d+)/gi, 'Total matching properties: $1.')
+      .replace(/Exact_Match_Found:\s*(true|false)/gi, '')
+      .replace(/Total_Database_Listings:\s*(\d+)/gi, '')
+      .replace(/Average_Property_Price:/gi, 'Average Property Price:')
+      .replace(/Matching_Count:/gi, 'Matching Properties Count:')
+      .replace(/Exact_Match_Found:/gi, '')
+      .trim();
+    
+    return formatted;
+  }
 
   // Health check polling
   async function checkBackendHealth() {
     try {
-      const res = await fetch(`${API_BASE_URL}/`);
+      const res = await fetchWithFallback('/');
       if (res.ok) {
         apiConnected = true;
         statusBannerText = 'All systems operational';
@@ -169,9 +235,9 @@
 
   // Send RAG Search Query
   async function sendQuestion(questionText: string) {
-    if (!questionText.trim() || isAsking) return;
+    if (!questionText || !questionText.trim() || isAsking) return;
     
-    const currentQuestion = questionText;
+    const currentQuestion = questionText.trim();
     quickAskQuestion = '';
     isAsking = true;
     
@@ -193,12 +259,19 @@
     });
 
     try {
-      const response = await fetch(`${API_BASE_URL}/ask`, {
+      const historyPayload = messages
+        .filter(m => m.text && !m.text.includes('Retrieving vector listings'))
+        .map(m => ({ sender: m.sender, text: m.text }));
+
+      const response = await fetchWithFallback('/ask', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ question: currentQuestion })
+        body: JSON.stringify({ 
+          question: currentQuestion,
+          history: historyPayload
+        })
       });
 
       if (!response.ok) {
@@ -293,7 +366,7 @@
     formData.append('file', file);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/transcribe`, {
+      const res = await fetchWithFallback('/transcribe', {
         method: 'POST',
         body: formData
       });
@@ -371,7 +444,9 @@
           title="Dashboard"
         >
           <LayoutDashboard size={20} />
-          <span>Dashboard</span>
+          {#if !sidebarCollapsed || mobileMenuOpen}
+            <span>Dashboard</span>
+          {/if}
         </button>
 
         <button 
@@ -381,8 +456,10 @@
           title="Query History"
         >
           <History size={20} />
-          <span>Query History</span>
-          <span class="count-badge">{queryHistory.length}</span>
+          {#if !sidebarCollapsed || mobileMenuOpen}
+            <span>Query History</span>
+            <span class="count-badge">{queryHistory.length}</span>
+          {/if}
         </button>
       </nav>
     </div>
@@ -488,7 +565,9 @@
                       </div>
 
                       <div class="bubble-text">
-                        <p>{msg.text}</p>
+                        {#if formatMessageText(msg.text)}
+                          <p>{formatMessageText(msg.text)}</p>
+                        {/if}
                         
                         <!-- Render Bullet Stats for initial Austin Trend response -->
                         {#if msg.bulletPoints}
@@ -576,9 +655,9 @@
 
             <!-- QUICK ASK CARD -->
             <section class="glass-panel card-box quick-ask-card">
-              <div class="card-header">
+              <div class="card-header quick-ask-header">
                 <div class="title-with-icon">
-                  <svg class="header-blue-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <svg class="header-blue-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                   </svg>
                   <h3>Quick Ask</h3>
@@ -588,7 +667,7 @@
               <div class="quick-ask-body">
                 <textarea 
                   bind:this={textareaRef}
-                  placeholder="Ask in English or Tanglish (e.g., '3 BHK in Egmore' or 'Egmore la 3 BHK budget 50 lakhs irukka')."
+                  placeholder="Ask in English or Tanglish (e.g., '3 BHK in Egmore')..."
                   bind:value={quickAskQuestion}
                   disabled={isAsking}
                   onkeydown={(e) => {
@@ -605,7 +684,7 @@
                         class="btn-primary voice-btn" 
                         class:recording={isRecording}
                         class:transcribing={isTranscribing}
-                        title={isRecording ? "Stop Recording" : isTranscribing ? "Transcribing..." : "Voice Search (English & Tanglish Supported)"} 
+                        title={isRecording ? "Stop Recording" : isTranscribing ? "Transcribing..." : "Voice Search"} 
                         onclick={toggleRecording}
                         disabled={isAsking}
                         type="button"
@@ -613,7 +692,7 @@
                         {#if isTranscribing}
                           <span class="mini-spinner"></span>
                         {:else}
-                          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke={isRecording ? "#ef4444" : "#060913"} stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="mic-svg">
+                          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke={isRecording ? "#ef4444" : "#060913"} stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="mic-svg">
                             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
                             <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
                             <line x1="12" y1="19" x2="12" y2="22"/>
@@ -621,19 +700,19 @@
                         {/if}
                       </button>
                      
-                     <button 
-                       class="btn-primary send-btn" 
-                       onclick={() => sendQuestion(quickAskQuestion)}
-                       disabled={isAsking || !quickAskQuestion.trim()}
-                     >
-                       {#if isAsking}
-                         <span class="spinner"></span>
-                         <span>Processing...</span>
-                       {:else}
-                         <Send size={16} />
-                         <span>Send Question</span>
-                       {/if}
-                     </button>
+                      <button 
+                        class="btn-primary send-btn" 
+                        onclick={() => sendQuestion(quickAskQuestion)}
+                        disabled={isAsking || !quickAskQuestion.trim()}
+                      >
+                        {#if isAsking}
+                          <span class="spinner"></span>
+                          <span>Processing...</span>
+                        {:else}
+                          <Send size={14} />
+                          <span>Send Question</span>
+                        {/if}
+                      </button>
                    </div>
                  </div>
               </div>
@@ -708,11 +787,34 @@
     transition: width var(--transition-normal);
     z-index: 10;
     flex-shrink: 0;
+    overflow: hidden;
   }
 
   .sidebar.collapsed {
     width: 72px;
     padding: 1.5rem 0.6rem;
+  }
+
+  .sidebar.collapsed:not(.mobile-open) .menu-item {
+    justify-content: center;
+    padding: 10px 0;
+    gap: 0;
+  }
+
+  .sidebar.collapsed:not(.mobile-open) .menu-item span,
+  .sidebar.collapsed:not(.mobile-open) .count-badge {
+    display: none;
+  }
+
+  .sidebar.collapsed:not(.mobile-open) .logo-box {
+    justify-content: center;
+    padding-left: 0;
+  }
+
+  .sidebar.collapsed:not(.mobile-open) .collapse-btn {
+    justify-content: center;
+    padding: 10px 0;
+    gap: 0;
   }
 
   .sidebar-top {
@@ -785,6 +887,14 @@
     text-align: left;
     width: 100%;
     transition: background-color var(--transition-fast), color var(--transition-fast);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .menu-item span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .menu-item:hover {
@@ -995,26 +1105,34 @@
   }
 
   /* --- QUICK ASK BOX --- */
+  .quick-ask-header {
+    padding: 0.6rem 1rem;
+  }
+
+  .quick-ask-header h3 {
+    font-size: 0.95rem;
+  }
+
   .quick-ask-body {
-    padding: 1.5rem;
+    padding: 0.65rem 1rem;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.5rem;
   }
 
   .quick-ask-body textarea {
     width: 100%;
-    height: 48px;
-    min-height: 48px;
-    max-height: 180px;
-    background-color: rgba(0, 0, 0, 0.12);
+    height: 38px;
+    min-height: 38px;
+    max-height: 120px;
+    background-color: rgba(0, 0, 0, 0.08);
     border: 1px solid var(--border-light);
-    border-radius: 8px;
-    padding: 12px;
+    border-radius: 6px;
+    padding: 8px 12px;
     color: var(--text-primary);
     font-family: var(--font-body);
-    font-size: 0.92rem;
-    line-height: 1.5;
+    font-size: 0.86rem;
+    line-height: 1.4;
     resize: none;
     outline: none;
     transition: border-color var(--transition-fast), background-color var(--transition-fast);
@@ -1022,7 +1140,7 @@
   }
 
   .light-theme .quick-ask-body textarea {
-    background-color: #ffffff;
+    background-color: #f8fafc;
   }
 
   .quick-ask-body textarea:focus {
@@ -1050,9 +1168,9 @@
     background: none;
     border: 1px solid var(--border-light);
     color: var(--text-secondary);
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1061,11 +1179,12 @@
   }
 
   .voice-btn {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    padding: 0;
-    border-radius: 8px;
+    width: 34px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    min-width: 34px !important;
+    padding: 0 !important;
+    border-radius: 6px !important;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1073,8 +1192,16 @@
     border: none !important;
     color: #060913 !important;
     cursor: pointer;
-    box-shadow: 0 4px 12px rgba(89, 255, 0, 0.25);
+    box-shadow: 0 2px 8px rgba(89, 255, 0, 0.2);
     flex-shrink: 0;
+  }
+
+  .send-btn {
+    height: 34px !important;
+    min-height: 34px !important;
+    padding: 4px 14px !important;
+    font-size: 0.82rem !important;
+    border-radius: 6px !important;
   }
 
   .voice-btn:hover {
@@ -1121,10 +1248,12 @@
     gap: 0.5rem;
     max-width: 82%;
     align-self: flex-start;
+    align-items: flex-start;
   }
 
   .chat-bubble-container.user-bubble {
     align-self: flex-end;
+    align-items: flex-end;
   }
 
   .chat-bubble-container.user-bubble .bubble-header {
@@ -1159,6 +1288,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
   }
 
   .bubble-sender {
@@ -1173,14 +1303,24 @@
   }
 
   .bubble-text {
+    width: fit-content;
+    max-width: 100%;
     background-color: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--border-light);
     border-radius: 12px;
-    padding: 1rem;
-    font-size: 0.92rem;
-    line-height: 1.5;
+    padding: 0.45rem 0.8rem;
+    font-size: 0.9rem;
+    line-height: 1.35;
     color: var(--text-primary);
     white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .bubble-text p {
+    margin: 0;
+    padding: 0;
+    line-height: 1.35;
   }
 
   .light-theme .bubble-text {
@@ -1893,8 +2033,8 @@
     }
 
     .bubble-text {
-      padding: 0.85rem;
-      font-size: 0.88rem;
+      padding: 0.45rem 0.75rem;
+      font-size: 0.86rem;
       overflow-wrap: anywhere;
       word-break: break-word;
     }
@@ -1922,14 +2062,17 @@
 
     .voice-btn {
       flex-shrink: 0;
-      width: 44px;
-      height: 44px;
+      width: 34px !important;
+      height: 34px !important;
+      min-height: 34px !important;
+      min-width: 34px !important;
       padding: 0;
     }
 
     .send-btn {
       flex-grow: 1;
-      min-height: 44px;
+      min-height: 34px !important;
+      height: 34px !important;
     }
   }
 

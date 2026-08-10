@@ -18,7 +18,7 @@ def get_mongo_client() -> AsyncIOMotorClient:
         mongo_url = Setting.MONGODB_URL_KEY or os.getenv("MONGODB_URL_KEY")
         if not mongo_url:
             raise ValueError("MONGODB_URL_KEY is not set in environment or config.")
-        _mongo_client = AsyncIOMotorClient(mongo_url, tlsCAFile=certifi.where())
+        _mongo_client = AsyncIOMotorClient(mongo_url, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
     return _mongo_client
 
 
