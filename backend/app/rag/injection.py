@@ -73,6 +73,12 @@ async def ingest_csv(file_path: str, batch_size: int = 50):
         print(f"Ingested rows {i} to {i + len(batch)} into MongoDB Atlas VectorStore.")
         await asyncio.sleep(1)
 
+    try:
+        from app.rag.retrieval import clear_mongo_cache
+        clear_mongo_cache()
+    except Exception:
+        pass
+
 
 if __name__ == "__main__":
     csv_file = os.path.abspath(os.path.join(base_dir, "..", "uploads", "Real_Estate_Assistant.csv"))

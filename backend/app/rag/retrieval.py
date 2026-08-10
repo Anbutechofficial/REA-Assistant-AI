@@ -20,9 +20,71 @@ _vector_store = VectorStore()
 _st_model = None
 _gemini_client = None
 _query_embedding_cache: dict[str, list[float]] = {}
+_mongo_properties_cache: list[dict] = None
 _local_properties_cache: list[dict] = None
 _csv_cache: list[dict] = None
 MAX_EMBEDDING_CACHE_SIZE = 1000
+
+
+def clear_mongo_cache():
+    global _mongo_properties_cache
+    _mongo_properties_cache = None
+
+
+async def load_mongo_properties() -> list[dict]:
+    """
+    Fetches property listings directly from MongoDB collection 'documents'.
+    Falls back to local CSV if MongoDB is empty or unreachable.
+    """
+    global _mongo_properties_cache
+    if _mongo_properties_cache is not None and len(_mongo_properties_cache) > 0:
+        return _mongo_properties_cache
+
+    try:
+        from app.db.mongodb import get_vector_collection
+        collection = get_vector_collection()
+        cursor = collection.find({}, {"_id": 0, "text": 1, "metadata": 1})
+        docs = await cursor.to_list(length=20000)
+
+        if docs and len(docs) > 0:
+            rows = []
+            for doc in docs:
+                text = doc.get("text", "")
+                meta = doc.get("metadata") or {}
+                p_name = str(meta.get("name", "")).strip()
+                p_loc = str(meta.get("location", "")).strip()
+                p_bhk = str(meta.get("bhk", "")).strip()
+
+                area_val = meta.get("area_sqft", 0)
+                try:
+                    p_sqft = float(area_val) if area_val is not None else 0.0
+                except (ValueError, TypeError):
+                    p_sqft = 0.0
+
+                price_val = meta.get("price_lakhs", 0)
+                try:
+                    p_price = float(price_val) if price_val is not None else 0.0
+                except (ValueError, TypeError):
+                    p_price = 0.0
+
+                if not text:
+                    text = f"{p_name} in {p_loc}: {p_bhk} BHK, {int(p_sqft) if p_sqft.is_integer() else p_sqft} sqft, Rs {p_price} Lakhs"
+
+                rows.append({
+                    "name": p_name,
+                    "location": p_loc,
+                    "bhk": p_bhk,
+                    "area_sqft": p_sqft,
+                    "price_lakhs": p_price,
+                    "str": text
+                })
+            _mongo_properties_cache = rows
+            print(f"[MongoDB] Successfully retrieved {len(_mongo_properties_cache)} documents from MongoDB Atlas.")
+            return _mongo_properties_cache
+    except Exception as e:
+        print(f"MongoDB collection fetch note: {e}")
+
+    return load_csv_properties()
 
 
 def get_sentence_model():
@@ -38,10 +100,9 @@ def get_sentence_model():
 
 
 def warmup_models():
-    """Pre-warm sentence embedding model and local dataset into RAM at startup."""
+    """Pre-warm sentence embedding model and property datasets into RAM at startup."""
     try:
         get_sentence_model()
-        load_local_properties()
         load_csv_properties()
         print("⚡ Warmup completed: SentenceTransformer and property datasets loaded into RAM!")
     except Exception as e:
@@ -127,8 +188,6 @@ def load_local_properties() -> list[dict]:
     return _local_properties_cache
 
 
-import re
-
 def load_csv_properties() -> list[dict]:
     global _csv_cache
     if _csv_cache is not None:
@@ -176,10 +235,11 @@ def cosine_similarity(vec1, vec2):
 
 async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dict]:
     """
-    Smart multi-layer property retrieval system:
+    Smart multi-layer MongoDB property retrieval system:
     1. Conversational memory query resolution for follow-up questions.
-    2. Atlas MongoDB Vector + Keyword Hybrid Search (if configured & online).
-    3. Intelligent RAM CSV Parameter Search with strict constraint filtering, intent-aware sorting, and failure handling.
+    2. Primary data retrieval directly from MongoDB Atlas 'documents' collection.
+    3. Atlas MongoDB Vector + Keyword Hybrid Search.
+    4. Strict constraint filtering (BHK, location, price, area), intent-aware sorting, and failure handling.
     """
     effective_query = query
     if history:
@@ -204,11 +264,11 @@ async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dic
                 effective_query = f"{last_user_q} - {query}"
 
     q_lower = effective_query.lower().strip()
-    csv_rows = load_csv_properties()
+    mongo_rows = await load_mongo_properties()
 
-    # Calculate overall dataset statistics for answer enrichment
-    total_count = len(csv_rows)
-    all_prices = [r["price_lakhs"] for r in csv_rows if r["price_lakhs"] > 0]
+    # Calculate overall dataset statistics directly from MongoDB dataset
+    total_count = len(mongo_rows)
+    all_prices = [r["price_lakhs"] for r in mongo_rows if r["price_lakhs"] > 0]
     avg_price = round(sum(all_prices) / max(len(all_prices), 1), 1) if all_prices else 0.0
 
     # --- 1. Parameter & Intent Extraction ---
@@ -303,8 +363,8 @@ async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dic
 
     # --- 3. Strict Parameter Filtering ---
     exact_matches = []
-    if csv_rows:
-        for r in csv_rows:
+    if mongo_rows:
+        for r in mongo_rows:
             # BHK filter
             if target_bhk and r["bhk"] != target_bhk:
                 continue
@@ -337,7 +397,7 @@ async def retrieve(query: str, history: list = None, top_k: int = 5) -> list[dic
         # RETRIEVAL FAILURE / NO MATCH CASE
         exact_match_found = False
         # Fallback to general closest matches
-        fallback_list = list(csv_rows)
+        fallback_list = list(mongo_rows)
         if target_bhk:
             bhk_fallback = [r for r in fallback_list if r["bhk"] == target_bhk]
             if bhk_fallback:
