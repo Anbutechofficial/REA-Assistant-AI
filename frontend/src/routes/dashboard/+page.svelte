@@ -148,25 +148,46 @@
     }
   }
 
-  let API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000';
-  let activeWorkingUrl: string | null = null;
+  const RENDER_BACKEND_URL = 'https://real-estate-rag-backend.onrender.com';
+  const LOCAL_BACKEND_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000';
 
-  // Smart non-blocking fetch helper with URL caching and 1.5s timeout per target
+  let activeWorkingUrl: string | null = null;
+  let API_BASE_URL = RENDER_BACKEND_URL;
+
+  function isLocalEnvironment(): boolean {
+    if (typeof window === 'undefined') return false;
+    const hostname = window.location.hostname;
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0' || hostname === '';
+  }
+
+  // Environment-aware fetch helper: Production URL exclusively targets Render Backend
   async function fetchWithFallback(path: string, init?: RequestInit): Promise<Response> {
-    const targets = [
-      activeWorkingUrl,
-      API_BASE_URL,
-      'http://localhost:8000',
-      'http://127.0.0.1:8000',
-      'https://real-estate-rag-backend.onrender.com'
-    ];
+    const isLocal = isLocalEnvironment();
+
+    // On Render/Production: NEVER query localhost:8000
+    // On Localhost: query local backend first, with Render fallback
+    const targets = isLocal
+      ? [
+          activeWorkingUrl,
+          LOCAL_BACKEND_URL,
+          'http://localhost:8000',
+          'http://127.0.0.1:8000',
+          RENDER_BACKEND_URL
+        ]
+      : [
+          activeWorkingUrl,
+          RENDER_BACKEND_URL,
+          (import.meta.env.VITE_API_BASE_URL as string)
+        ];
 
     const uniqueTargets = [...new Set(targets.filter(Boolean))] as string[];
     let lastError: any = null;
 
     for (const base of uniqueTargets) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1500);
+      // Allow 15s for Render free-tier cold starts, 4s for local
+      const timeoutMs = base.includes('onrender.com') ? 15000 : 4000;
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
         const cleanBase = base.replace(/\/+$/, '');
