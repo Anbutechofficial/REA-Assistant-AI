@@ -46,11 +46,9 @@
 
   $effect(() => {
     if (quickAskQuestion !== undefined && textareaRef) {
-      textareaRef.style.height = 'auto';
-      if (quickAskQuestion.trim().length > 0) {
+      textareaRef.style.height = '38px';
+      if (quickAskQuestion.trim().length > 0 && textareaRef.scrollHeight > 42) {
         textareaRef.style.height = Math.min(textareaRef.scrollHeight, 120) + 'px';
-      } else {
-        textareaRef.style.height = '38px';
       }
     }
   });
@@ -1305,22 +1303,26 @@
   .bubble-text {
     width: fit-content;
     max-width: 100%;
+    height: auto;
+    min-height: auto;
     background-color: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--border-light);
     border-radius: 12px;
-    padding: 0.45rem 0.8rem;
+    padding: 0.4rem 0.75rem;
     font-size: 0.9rem;
     line-height: 1.35;
     color: var(--text-primary);
     white-space: pre-wrap;
     word-break: break-word;
     overflow-wrap: anywhere;
+    box-sizing: border-box;
   }
 
   .bubble-text p {
-    margin: 0;
-    padding: 0;
+    margin: 0 !important;
+    padding: 0 !important;
     line-height: 1.35;
+    display: inline-block;
   }
 
   .light-theme .bubble-text {
